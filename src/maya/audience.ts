@@ -1,0 +1,138 @@
+// AGENT_HOTFIX_v5a_RESTORE_AUDIENCE_AND_PIPELINE_QUERY_v1
+// Restored from AGENT_BLOCK_v2. Audience contract used by the
+// chat handler in src/api/maya.ts (via parseAudience +
+// MAYA_AUDIENCE_HEADER) and by the tool registry / dispatcher
+// (via isToolAllowed). Adding a new tool means: implement it,
+// register it in toolRegistry.ts, and list its name under the
+// audiences allowed to call it in TOOLS_BY_AUDIENCE below.
+export type MayaAudience = "visitor" | "client" | "staff";
+
+export const MAYA_AUDIENCE_HEADER = "x-maya-audience";
+
+export const CLIENT_IDENTITY_PROMPT = `// AGENT_CLIENT_IDENTITY_PROMPT_v430
+The person you are talking to is SIGNED IN. You already know who they are.
+Before answering ANY question about them - their name, email, phone, location,
+company, application, stage, documents, or how many applications they have -
+call application.find_mine FIRST. It returns their contact record, their
+applications and their latest documents. Never say you cannot access their
+personal information: you can, and saying otherwise to a signed-in client is
+wrong and makes Boreal look broken. Only if find_mine comes back empty do you
+say you could not find their record and offer to connect them to a person.`;
+
+export const TOOLS_BY_AUDIENCE: Readonly<Record<MayaAudience, ReadonlyArray<string>>> = {
+  visitor: [
+    "visitor.identify",
+    "info.products",
+    "info.qualifications",
+    "lead.capture",
+    "apply.start_url",
+    "escalate.to_human",
+    "capital.readiness_check",
+    "prequal.estimate",
+    "industry.guidance",
+    "apply.doc_preview",
+    // AGENT_MAYA_SITE_FACTS_v371 - info.lenders and catalog.summary removed for visitors: they leaked internal counts
+    // ("114 lenders, 197 products"); the website says 80+ lenders.
+    "waitlist.join",
+    "book.callback",
+    "lender.products",
+  ],
+  client: [
+    // MAYA_v817 - the to-do list exactly as the client portal shows it (forms AND documents), and form field help.
+    "application.checklist",
+    "forms.field_help",
+    "application.my_status",
+    "docs.checklist",
+    "pgi.completion_link",
+    "book.callback",
+    "escalate.to_human",
+    "apply.field_help",
+    "docs.explain",
+    "docs.rejections",
+    "offer.explain",
+    "application.next_step",
+    "signature.status",
+    "application.timeline_estimate",
+    "application.resume_link",
+    "application.find_mine",
+    "catalog.summary",
+    "lender.products",
+  ],
+  staff: [
+    "pipeline.facts", // AGENT_MAYA_FACTS_v371
+    "pipeline.query",
+    "contact.find",
+    "application.summary",
+    "comm.draft_email",
+    "comm.send_sms",
+    "call.initiate",
+    "maya.audit",
+    "application.open_newest",
+    "ui.navigate",
+    "application.underwriting_summary",
+    "lender.match_explain",
+    "pgi.readiness",
+    "lender.products",
+    "contact.timeline",
+    "call.triage",
+    "application.risk_flags",
+    "catalog.summary",
+    "banking.summary",
+    "credit.summary",
+    "notes.read",
+    "docs.request_draft",
+    "daily.briefing",
+    "crm.notes",
+    "crm.add_note",
+    "crm.tasks",
+    "crm.create_task",
+    "marketing.overview",
+    "marketing.send_campaign",
+    // AGENT_MAYA_INSIGHTS_v657
+    "ads.performance",
+    "comms.overview",
+    "contact.picture",
+    "automations.overview",
+    "referrers.overview",
+    "todo.status",
+    // AGENT_MAYA_ADS_v684
+    "ads.keywords",
+    "ads.negatives",
+    "ads.negatives.add",
+    "ads.negatives.remove",
+    // AGENT_MAYA_ADS_INSIGHTS_v712
+    "ads.story",
+    "ads.visitors",
+    "ads.dropoff",
+    "ads.health",
+    "ads.ga4",
+    "ads.audiences",
+    // AGENT_v789_PENDING_ACTIONS - offered only on a later request whose message is an explicit approval.
+    "pending.confirm",
+  ],
+};
+
+/**
+ * Normalize an incoming X-Maya-Audience header value into a
+ * MayaAudience. Unknown / missing values fall back to "visitor"
+ * — the most-restricted whitelist — so legacy or anonymous
+ * callers cannot accidentally pick up staff tools.
+ */
+export function parseAudience(raw: string | string[] | undefined): MayaAudience {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof v !== "string") return "visitor";
+  const norm = v.trim().toLowerCase();
+  if (norm === "staff" || norm === "client" || norm === "visitor") return norm;
+  return "visitor";
+}
+
+/**
+ * Is a given tool name in the allowlist for the given audience?
+ * Returns false for unknown tool names, by design — an unknown
+ * tool is never allowed.
+ */
+export function isToolAllowed(audience: MayaAudience, toolName: string): boolean {
+  const list = TOOLS_BY_AUDIENCE[audience];
+  if (!list) return false;
+  return list.includes(toolName);
+}

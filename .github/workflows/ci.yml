@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # AGENT_v789_CI - fail on any high or critical advisory.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      # AGENT_v789_SOURCE_GREP - no new tests that assert on source text.
+      - name: Source-grep test guard
+        run: node scripts/check-source-grep-tests.mjs
+
+      - name: Verify artifact
+        run: |
+          test -f dist/index.js
+          node -e "const fs=require('fs'); const s=fs.statSync('dist/index.js'); if(!s.size){process.exit(1)}"

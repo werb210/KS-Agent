@@ -1,0 +1,157 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { request as httpRequest } from "node:http";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp } from "../app.js";
+import { visitorContext } from "../../test/mayaContext.js";
+
+type JsonResponse = { status: number; body: any };
+
+function postJson(url: URL, payload: unknown): Promise<JsonResponse> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload ?? {});
+    const req = httpRequest(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          Origin: "https://boreal.financial",
+          // AGENT_v789_MAYA_CONTEXT_REQUIRED - BF-Server signs a context for every caller.
+          "x-maya-context": visitorContext(),
+        },
+      },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          raw += chunk;
+        });
+        res.on("end", () => {
+          try {
+            resolve({ status: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : {} });
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+describe("maya public routes", () => {
+  let server: Server;
+  let baseUrl = "";
+
+  beforeAll(async () => {
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
+    delete process.env.OPENAI_API_KEY;
+
+    const { app } = createApp();
+    server = app.listen(0);
+
+    await new Promise<void>((resolve) => {
+      server.once("listening", () => resolve());
+    });
+
+    const address = server.address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  beforeEach(() => {
+    // AGENT_BLOCK_v329_MAYA_FAILSAFE_TESTS_v1 — v328 routes both /maya/escalate
+    // and /maya/issue through the single canonical BF-Server endpoint
+    // /api/maya/escalate (kind-discriminated).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+        if (url.endsWith("/api/maya/escalate")) {
+          let kind: string | null = null;
+          try {
+            kind = init?.body ? (JSON.parse(String(init.body)).kind ?? null) : null;
+          } catch {
+            kind = null;
+          }
+          const responsePayload = kind === "report_issue" ? { ok: true, issue_id: "issue_mock" } : { ok: true, conversation_id: "conv_mock" };
+          return new Response(JSON.stringify(responsePayload), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        throw new Error(`Unexpected network call in test: ${url}`);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  });
+
+  it("POST /api/maya/message returns a reply payload", async () => {
+    // AGENT_BLOCK_v3_MAYA_GRACEFUL_FALLBACK_v1 — when OPENAI_API_KEY is
+    // unset (the default in this test suite), the agent returns 200 with
+    // a canned reply + fallback marker instead of 503.
+    const response = await postJson(new URL("/api/maya/message", baseUrl), { message: "hello" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        reply: expect.any(String),
+        fallback: "no_openai_key",
+      }),
+    );
+    expect((response.body as { reply: string }).reply.length).toBeGreaterThan(0);
+  });
+
+  it("POST /maya/escalate returns successful escalation payload", async () => {
+    const response = await postJson(new URL("/maya/escalate", baseUrl), { reason: "help", sessionId: "session-1" });
+
+    expect(response.status).toBe(200);
+    // v329 — response now also carries conversation_id from canonical BF endpoint
+    expect(response.body).toEqual(expect.objectContaining({ ok: true, persisted: true, conversation_id: "conv_mock" }));
+  });
+
+  it("POST /maya/issue returns ok", async () => {
+    const response = await postJson(new URL("/maya/issue", baseUrl), { message: "route failed", sessionId: "session-1" });
+
+    expect(response.status).toBe(200);
+    // v329 — response now also carries issue_id from canonical BF endpoint
+    expect(response.body).toEqual(expect.objectContaining({ ok: true, persisted: true, issue_id: "issue_mock" }));
+  });
+
+  it("POST /maya/escalate returns persisted=false when BF-Server is unreachable", async () => {
+    // v329 — BF-Server target is now /api/maya/escalate; assert the failure-mode
+    // shape includes conversation_id: null in addition to {ok:true, persisted:false}.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.endsWith("/api/maya/escalate")) {
+          throw new Error("BF-Server unavailable");
+        }
+        throw new Error(`Unexpected network call in test: ${url}`);
+      }),
+    );
+
+    const response = await postJson(new URL("/maya/escalate", baseUrl), { reason: "help", sessionId: "session-1" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true, persisted: false, conversation_id: null });
+  });
+});
