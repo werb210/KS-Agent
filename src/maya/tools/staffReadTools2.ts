@@ -69,7 +69,7 @@ export const NOTES_READ_TOOL_DESCRIPTOR = {
     name: "notes.read",
     description:
       "Read-only recent CRM notes for a contact or company, most recent first. Use when staff ask 'what are the latest notes', 'what's been logged on this contact', 'any notes on this account'. Provide the contact_id (or company_id) on the current screen; pass the active silo if known. Does NOT add or edit notes.",
-    parameters: { type: "object", properties: { contact_id: { type: "string", description: "Contact to read notes for." }, company_id: { type: "string", description: "Company to read notes for (alternative to contact_id)." }, silo: { type: "string", description: "Active silo (BF/BI/SLF)." }, limit: { type: "number", description: "Max notes (default 20)." }, session_id: { type: "string", description: "Optional session id." } }, required: [] },
+    parameters: { type: "object", properties: { contact_id: { type: "string", description: "Contact to read notes for." }, company_id: { type: "string", description: "Company to read notes for (alternative to contact_id)." }, limit: { type: "number", description: "Max notes (default 20)." }, session_id: { type: "string", description: "Optional session id." } }, required: [] },
   },
 };
 
@@ -99,6 +99,6 @@ export const DAILY_BRIEFING_TOOL_DESCRIPTOR = {
     name: "daily.briefing",
     description:
       "Read-only 'what needs my attention' briefing for the staff member's silo: deals waiting on documents, stale deals with no recent activity, and recent voicemails/missed calls. Use when staff ask 'what needs my attention today', 'give me a briefing', 'what's on my plate'. Pass the active silo.",
-    parameters: { type: "object", properties: { silo: { type: "string", description: "Active silo (BF/BI/SLF); defaults to BF." }, session_id: { type: "string", description: "Optional session id." } }, required: [] },
+    parameters: { type: "object", properties: { session_id: { type: "string", description: "Optional session id." } }, required: [] },
   },
 };

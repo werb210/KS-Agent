@@ -7,18 +7,17 @@ import { mayaRouter } from "./api/maya.js";
 import { rateLimit } from "express-rate-limit";
 import { MAYA_CONTEXT_HEADER, verifyMayaContext } from "./maya/context.js";
 import { isValidServiceToken } from "./lib/serviceToken.js";
+import { licenseeUrls } from "./licensee/brand.js";
 
 // AGENT_BLOCK_v20_BOOT_CONFIG_AUDIT_v1
-// Maya graceful-degrades to SMS handoff when any of these are missing
+// The assistant degrades to a human handoff when any of these are missing
 // or wrong. Health endpoint should fail (not pass) if these are absent.
-// AGENT_v789_ENV - MAYA_HANDOFF_TO is no longer read anywhere (handoffs route through
-// BF-Server), so it is not required.
+// KS_AGENT_v1_CONFIG - SMS and handoffs go through the licensee's server, so the agent
+// needs no Twilio settings of its own.
 export const REQUIRED_ENV = [
   "OPENAI_API_KEY",
   "SERVER_URL",
   "JWT_SECRET",
-  "TWILIO_ACCOUNT_SID",
-  "TWILIO_AUTH_TOKEN",
 ] as const;
 
 const healthCache = new Map<string, number>();
@@ -32,20 +31,31 @@ export function auditRequiredEnv(env: NodeJS.ProcessEnv = process.env): string[]
 }
 
 // AGENT_BLOCK_v317_CORS_FAIL_CLOSED_v1
-// Known Boreal surfaces the Maya widget loads on. Used as the fail-closed
-// default in production when CORS_ALLOWED_ORIGINS is unset, so a missing
-// env var no longer means "reflect any origin on the internet". An
-// explicit CORS_ALLOWED_ORIGINS always takes precedence. Resolution is
-// done per-createApp (below) rather than at module load so it's testable
-// and respects the env in force when the app is built.
-const DEFAULT_PROD_ORIGINS = [
-  "https://boreal.financial",
-  "https://www.boreal.financial",
-  "https://staff.boreal.financial",
-  "https://client.boreal.financial",
-] as const;
+// A missing CORS_ALLOWED_ORIGINS must never mean "reflect any origin on the
+// internet" in production. An explicit CORS_ALLOWED_ORIGINS always takes
+// precedence. KS_AGENT_v1_LICENSEE - without it, production allows only the
+// licensee's own apps (portal, client app, website) as last loaded from
+// GET {SERVER_URL}/api/licensee, and no browser origin before that first load.
+/** The licensee's app origins (portal, client app, website and its www twin). */
+export function licenseeOrigins(): Set<string> {
+  const out = new Set<string>();
+  const urls = licenseeUrls();
+  for (const u of [urls.portal, urls.client, urls.website]) {
+    try {
+      const o = new URL(u).origin;
+      if (o.startsWith("https://")) {
+        out.add(o);
+        const host = new URL(o).hostname;
+        if (urls.website === u && !host.startsWith("www.")) out.add(`https://www.${host}`);
+      }
+    } catch {
+      // not a URL - skip
+    }
+  }
+  return out;
+}
 
-function resolveAllowedOrigins(env: NodeJS.ProcessEnv = process.env): { allowed: Set<string>; allowAny: boolean; usingDefaults: boolean } {
+function resolveAllowedOrigins(env: NodeJS.ProcessEnv = process.env): { allowed: () => Set<string>; allowAny: boolean; usingDefaults: boolean } {
   const configured = new Set(
     (env.CORS_ALLOWED_ORIGINS ?? "")
       .split(",")
@@ -53,10 +63,10 @@ function resolveAllowedOrigins(env: NodeJS.ProcessEnv = process.env): { allowed:
       .filter(Boolean),
   );
   const isProd = env.NODE_ENV === "production";
-  if (configured.size > 0) return { allowed: configured, allowAny: false, usingDefaults: false };
-  if (isProd) return { allowed: new Set<string>(DEFAULT_PROD_ORIGINS), allowAny: false, usingDefaults: true };
+  if (configured.size > 0) return { allowed: () => configured, allowAny: false, usingDefaults: false };
+  if (isProd) return { allowed: licenseeOrigins, allowAny: false, usingDefaults: true };
   // Non-production with nothing configured: allow any origin (dev convenience).
-  return { allowed: new Set<string>(), allowAny: true, usingDefaults: false };
+  return { allowed: () => new Set<string>(), allowAny: true, usingDefaults: false };
 }
 
 // AGENT_v784_MAYA_RATE_LIMIT - Maya routes are /api/maya/* and /maya/*.
@@ -108,8 +118,10 @@ function normalizeError(error: unknown): { message: string; stack?: string } {
   return { message: "Internal server error" };
 }
 
+// KS_AGENT_v1_CONFIG - an optional adapter that is not configured reports "degraded" and does not hold traffic back;
+// only a required one that is down does.
 function readinessFromStatuses(statuses: AdapterStatus[]): "ok" | "error" {
-  return statuses.every((status) => status === "ok") ? "ok" : "error";
+  return statuses.some((status) => status === "down") ? "error" : "ok";
 }
 
 export function createApp(options: AppDeps = {}) {
@@ -121,7 +133,7 @@ export function createApp(options: AppDeps = {}) {
   const { allowed: allowedOrigins, allowAny: allowAnyOrigin, usingDefaults } = resolveAllowedOrigins();
   if (usingDefaults) {
     console.warn(
-      `[WARN] CORS_ALLOWED_ORIGINS not set — failing closed to default Boreal origins: ${DEFAULT_PROD_ORIGINS.join(", ")}`,
+      "[WARN] CORS_ALLOWED_ORIGINS not set — failing closed to the licensee's own app origins (from GET /api/licensee).",
     );
   }
 
@@ -139,7 +151,7 @@ export function createApp(options: AppDeps = {}) {
     res.setHeader("x-request-id", requestId);
 
     const requestOrigin = req.header("origin");
-    const originAllowed = !requestOrigin || allowAnyOrigin || allowedOrigins.has(requestOrigin);
+    const originAllowed = !requestOrigin || allowAnyOrigin || allowedOrigins().has(requestOrigin);
 
     if (!originAllowed) {
       res.status(403).json({

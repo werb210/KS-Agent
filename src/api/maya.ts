@@ -3,16 +3,19 @@ import { randomUUID } from "node:crypto";
 import { getSessionHistory, appendSessionTurn } from "../maya/sessionHistory.js";
 import { signServiceToken, logBFServerAuthFailure } from "../lib/serviceToken.js";
 import { mayaContextFromRequest } from "../maya/context.js";
+import { LENDING_SILO } from "../lib/staffScope.js";
 import { sessionKey } from "../maya/sessionKey.js";
 import { checkBudget, recordUsage, tokensUsed, sessionTokensUsed } from "../maya/tokenBudget.js";
 import { confirmAvailable } from "../maya/pendingActions.js";
 import { applyGuardrails, scrubPrivateNumbers } from "../maya/guardrails.js";
 import { CLIENT_STAGE_GUIDE, CLIENT_CHECKLIST_RULES, clientStageLabel } from "../maya/clientKnowledge.js"; // MAYA_v817 - stages and the to-do list rules
+import { assistantIntro, assistantName, clientAppUrl, companyName, contactLine, mailingAddress, teamRef } from "../licensee/brand.js"; // KS_AGENT_v1_LICENSEE
 import {
   canFollowUp, claimHandoff, contactFromText, finishHandoff, getProvidedContact, rememberProvidedContact, type ProvidedContact,
 } from "../maya/handoff.js";
 
 export const mayaEnabled = true;
+
 
 // AGENT_v789_LIMITS - caps on what one request can send to OpenAI.
 export const MAYA_LIMITS = {
@@ -27,17 +30,13 @@ export const MAYA_LIMITS = {
   maxToolRounds: 4,
 } as const;
 
-// AGENT_v789_TOKEN_BUDGET - the fallback when a daily budget is spent, and the outage replies, offer the 866 line.
-// MAYA_v817 - the line always carries the number (MAYA_866_LINE was unset in Azure, so clients were told to call
-// "the 866 line" with no number), defaulting to Boreal's toll-free 1-866-631-8939.
-export const DEFAULT_866_LINE = "1-866-631-8939";
-export function boreal866Line(): string {
-  const n = scrubPrivateNumbers(process.env.MAYA_866_LINE?.trim() ?? "");
-  return n || DEFAULT_866_LINE;
+// AGENT_v789_TOKEN_BUDGET - the fallback when a daily budget is spent, and the outage replies, offer the licensee's
+// support contacts. KS_AGENT_v1_LICENSEE - the phone and email come from the licensee's server (GET /api/licensee);
+// when the licensee has set neither, the replies leave the line out rather than inventing a number.
+function supportContact(): string {
+  return scrubPrivateNumbers(contactLine());
 }
-function phoneLine(): string {
-  return `call Boreal's toll-free line at ${boreal866Line()}`;
-}
+const cap = (t: string): string => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
 
 // MAYA_v817 - where the person is chatting decides how they reach a person. "Talk to a Human" exists only on the
 // website widget and the client app's floating Maya widget; the client portal's chat has "Send to my advisor" and
@@ -57,13 +56,21 @@ export function humanHelp(surface: HelpSurface): string | null {
   if (surface === "client_portal_chat") return "tap \"Send to my advisor\" under my answer, or choose your advisor at the top of this chat";
   return null;
 }
+/** The ways to reach a person from this surface: the screen's control and/or the licensee's support contacts. */
+function reachOptions(surface: HelpSurface): string[] {
+  return [humanHelp(surface), supportContact()].filter((x): x is string => Boolean(x));
+}
 export function budgetFallbackReply(surface: HelpSurface = "unknown"): string {
-  const help = humanHelp(surface);
-  return `Sorry - I can't take more questions right now. For help, ${help ? `${help}, or ` : ""}${phoneLine()}, and someone from Boreal will be glad to help.`;
+  const opts = reachOptions(surface);
+  return opts.length
+    ? `Sorry - I can't take more questions right now. For help, ${opts.join(", or ")}, and ${teamRef()} will be glad to help.`
+    : "Sorry - I can't take more questions right now. Please try again a little later.";
 }
 
 async function bfServer(path: string, init: RequestInit = {}, timeoutMs = 8_000) {
-  const base = process.env.SERVER_URL || "https://server.boreal.financial";
+  // KS_AGENT_v1_CONFIG - the licensee's own server; there is no default address.
+  const base = (process.env.SERVER_URL || process.env.BASE_URL || "").replace(/\/+$/, "");
+  if (!base) throw new Error("SERVER_URL is not configured");
   const token = signServiceToken();
   const res = await fetch(`${base}${path}`, {
     ...init,
@@ -90,8 +97,6 @@ async function getFromBFServer(path: string) {
   return res.json().catch(() => null);
 }
 
-const CLIENT_APP_URL = process.env.CLIENT_URL || "https://client.boreal.financial";
-
 function safeHandler(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
     handler(req, res).catch(next);
@@ -100,23 +105,23 @@ function safeHandler(handler: (req: Request, res: Response) => Promise<void>) {
 
 // MAYA_v817 - swapped out on surfaces that have no Talk to a Human button.
 const TALK_TO_HUMAN_FACT = "To talk to a person, tell them to tap the Talk to a Human button. ";
-const SITE_FACTS =
-  // AGENT_MAYA_SITE_FACTS_v371 - the website's own answers. Maya was answering from general lending knowledge
-  // (a "hard inquiry", "same-day funding", $5K-$30M, "114 lenders") and contradicting the site.
-  "BOREAL FACTS (these come from Boreal's website and override anything a tool or your general knowledge says): " +
-  "Boreal never pulls your credit at any point - applying has no impact on your credit; a lender checks credit only with the client's permission, before making an offer. " +
-  "Funding can happen in as little as 3-4 days for clean, complete files on smaller term loans; most files take longer, and SBA files take weeks. Never promise same-day funding. " +
-  "Boreal arranges financing from $10K to $100M+. " +
-  "Boreal works with 80+ lenders. Never give any other lender or product count. " +
-  "Who qualifies: in Canada a business needs at least 6 months in business and about $10,000 a month in revenue; in the United States, SBA loans are available to start-ups. " +
-  "How it works: the client applies once (about five minutes), Boreal's own team reviews the file first, then Boreal takes it to the lenders on its panel that fund businesses like theirs, and the client deals with Boreal, not with twenty lenders. Never tell anyone to check with or contact a lender; Boreal handles the lenders. " +
-  "To start, a client needs six months of business bank statements, basic details about the company, and roughly what they need and what it is for. " +
-  "Fees: it costs nothing to apply; the lender pays Boreal. The one exception is media and production financing with a lender that does not pay Boreal, where the client signs a 2% fee agreement. " +
-  "Start-ups: Boreal does not currently have start-up options in Canada, so a Canadian business under 6 months or under about $10,000 a month in revenue can join the start-up waitlist (waitlist.join); in the United States, SBA loans are open to start-ups. Do not suggest personal loans, grants or equity investors. " +
-  "United States: Boreal arranges SBA 7(a) and 504 loans plus term loans, lines of credit, equipment and working capital through US lenders; link https://boreal.financial/us . " +
-  "Personal guarantees: lenders often ask for one; Boreal's sister company Boreal Insurance (Boreal Risk Management, https://boreal.insure) offers Personal Guarantee Insurance. " +
-  TALK_TO_HUMAN_FACT +
-  "When the visitor says yes to applying, give the Apply link (apply.start_url).";
+/**
+ * KS_AGENT_v1_LICENSEE - the company rules for public and client answers. Each licensee has its own lenders,
+ * products, amounts, eligibility rules and fees, so none are written here: they come only from the licensee's
+ * server (lender.products, info.products, info.qualifications) and the knowledge its staff trained.
+ */
+export function companyFacts(): string {
+  const company = companyName();
+  return (
+    `COMPANY FACTS: you represent ${company}, which arranges business lending through its own panel of lending partners. ` +
+    `Facts about ${company} - amount ranges, rates, lender or product counts, who qualifies, countries served, fees, documents needed and how long funding takes - come ONLY from tool results (lender.products, info.products, info.qualifications, apply.doc_preview) and the company knowledge you are given; they override your general knowledge. If a fact is not there, say you do not have it and offer to connect them with the team. ` +
+    "Never give a lender or product count a tool did not give you. Never promise same-day funding or any funding time. Never say whether applying affects their credit unless the company knowledge says so. " +
+    `How it works: the client applies once, ${company}'s team reviews the file, then takes it to the lending partners that fund businesses like theirs, so the client deals with ${company}, not with many lenders. Never tell anyone to check with or contact a lender; ${company} handles the lenders. ` +
+    "If a business is too early for financing, offer to add them to the start-up waitlist (waitlist.join). Do not suggest personal loans, grants or equity investors, and do not offer insurance products. " +
+    TALK_TO_HUMAN_FACT +
+    "When the visitor says yes to applying, give the Apply link (apply.start_url)."
+  );
+}
 
 // ---------- Maya router ----------
 export const mayaRouter = Router();
@@ -128,13 +133,18 @@ export const mayaRouter = Router();
 // AGENT_v789_FAILOVER - a visitor is only handed off once we have their name and a phone or
 // email (otherwise we ask for them), the handoff uses only verified identity, at most one
 // per session per 10 minutes, and Maya says someone will follow up only when it went through.
+// KS_AGENT_v1_LICENSEE - getters, so each reply names the licensee's team as last loaded.
 export const FAILOVER_REPLIES = {
-  askForContact: "I'm having trouble answering right now. If you share your name and a phone number or email, I'll pass your message to the Boreal team so someone can follow up.",
-  notified: "I'm having trouble answering right now, so I've passed your message to the Boreal team and someone will follow up with you.",
-  alreadyNotified: "I'm having trouble answering right now, but the Boreal team already has your message from a few minutes ago and someone will follow up with you.",
+  get askForContact(): string { return `I'm having trouble answering right now. If you share your name and a phone number or email, I'll pass your message to ${teamRef()} so someone can follow up.`; },
+  get notified(): string { return `I'm having trouble answering right now, so I've passed your message to ${teamRef()} and someone will follow up with you.`; },
+  get alreadyNotified(): string { return `I'm having trouble answering right now, but ${teamRef()} already has your message from a few minutes ago and someone will follow up with you.`; },
   // MAYA_v817 - names a button only where the surface has one.
-  failed: (surface: HelpSurface = "unknown") => { const help = humanHelp(surface); return `I'm having trouble answering right now and couldn't reach the team either. Please ${help ? `${help}, ` : ""}try again in a few minutes, or ${phoneLine()}.`; },
-  staff: "Maya is having trouble reaching the model right now. Please try again in a minute.",
+  failed: (surface: HelpSurface = "unknown"): string => {
+    const help = humanHelp(surface);
+    const contact = supportContact();
+    return `I'm having trouble answering right now and couldn't reach the team either. Please ${help ? `${help}, ` : ""}try again in a few minutes${contact ? `, or ${contact}` : ""}.`;
+  },
+  get staff(): string { return `${assistantName()} is having trouble reaching the model right now. Please try again in a minute.`; },
 };
 
 async function mayaHumanFailover(args: {
@@ -170,7 +180,7 @@ async function mayaHumanFailover(args: {
   try {
     const r = (await postToBFServer("/api/maya/escalate", {
       kind: "talk_to_human",
-      message: `[Maya unavailable] ${args.message}`.slice(0, 1000),
+      message: `[${assistantName()} unavailable] ${args.message}`.slice(0, 1000),
       contact: { phone: args.phone, email: null },
       providedContact: args.phone ? null : provided,
       contact_id: args.contactId,
@@ -216,28 +226,30 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
     // returned 503 and the website widget showed an error, which made
     // the whole chatbot look broken to visitors. Send a polite canned
     // reply and a soft nudge to Talk-to-Human.
+    // KS_AGENT_v1_LICENSEE - the assistant and company names are the licensee's; no products, prices or
+    // regions are claimed here, because each licensee has its own.
     const lower = message.toLowerCase().trim();
+    const intro = assistantIntro();
     let reply: string;
     if (/^(hi|hey|hello|yo|sup|good\s*(morning|afternoon|evening))[\s!.?]*$/.test(lower)) {
-      reply = "Hi! I'm Maya, the Boreal Financial assistant. I can answer general questions about our lending products, or hand you off to a human advisor — tap Talk to a Human below.";
+      reply = `Hi! I'm ${intro}. I can answer general questions about business financing, or hand you off to a human advisor — tap Talk to a Human below.`;
     } else if (/thank|thanks|ty\b/.test(lower)) {
       reply = "You're welcome! Tap Talk to a Human if you'd like to speak with an advisor.";
     } else if (/loan|finance|capital|equipment|funding|term|line of credit|loc/.test(lower)) {
-      reply = "Boreal Financial offers term loans, lines of credit, equipment financing, commercial real estate, and acquisition financing across Canada. For details specific to your business, tap Talk to a Human and an advisor will be in touch shortly.";
-    } else if (/insurance|pgi|personal\s*guarantee/.test(lower)) {
-      reply = "Insurance is handled by our sister company, Boreal Risk Management, at boreal.insure. I can help with Boreal Financial's lending products, or tap Talk to a Human to reach an advisor.";
+      reply = "For financing options that fit your business, tap Talk to a Human and an advisor will be in touch shortly.";
     } else if (/hour|open|when|time/.test(lower)) {
-      reply = "We're online during business hours (Pacific). Outside business hours, tap Talk to a Human and we'll text you back as soon as we're in.";
+      reply = "Our team is available during business hours. Outside business hours, tap Talk to a Human and we'll get back to you as soon as we're in.";
     } else if (/who.*you|what.*you|about/.test(lower)) {
-      reply = "I'm Maya, the Boreal Financial assistant. I can answer general questions about our lending products, or hand you off to a human advisor.";
+      reply = `I'm ${intro}. I can answer general questions about business financing, or hand you off to a human advisor.`;
     } else {
-      reply = "Good question — that one's best handled by a person. Tap Talk to a Human below and a Boreal advisor will text you back shortly.";
+      reply = "Good question — that one's best handled by a person. Tap Talk to a Human below and an advisor will get back to you shortly.";
     }
-    // MAYA_v817 - these canned lines name Talk to a Human; on a screen without that button, point to the advisor or the 866 line.
+    // MAYA_v817 - these canned lines name Talk to a Human; on a screen without that button, point to the advisor or the support line.
     const nkScreen = req.body?.screen_context && typeof req.body.screen_context === "object" && !Array.isArray(req.body.screen_context) ? (req.body.screen_context as Record<string, unknown>) : null;
-    const nkHelp = humanHelp(helpSurface(mayaContextFromRequest(req).audience, nkScreen));
-    if (nkHelp !== "tap Talk to a Human") {
-      reply = `I'm Maya, the Boreal Financial assistant, and I can't answer questions just now. ${nkHelp ? nkHelp.charAt(0).toUpperCase() + nkHelp.slice(1) + ", or " : "Please "}${phoneLine()} and someone from Boreal will help.`;
+    const nkSurface = helpSurface(mayaContextFromRequest(req).audience, nkScreen);
+    if (humanHelp(nkSurface) !== "tap Talk to a Human") {
+      const opts = reachOptions(nkSurface);
+      reply = `I'm ${intro}, and I can't answer questions just now. ${opts.length ? `${cap(opts.join(", or "))} and ${teamRef()} will help.` : "Please try again in a few minutes."}`;
     }
     res.status(200).json({ reply, actions: [], audience: "visitor", fallback: "no_openai_key", toolsOffered: 0, executedTools: [] });
     return;
@@ -315,19 +327,23 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
   const staffId = mctx.staff?.id ?? null;
   const ctx = {
     audience, applicationId, sessionId, subject: mctx.subject, phone, email: null, contactId: mctx.contactId,
-    staffEmail, staffPhone: mctx.staff?.phone ?? null, staffRole, staffId, silo: audience === "staff" ? (mctx.silo || "BF") : null,
+    staffEmail, staffPhone: mctx.staff?.phone ?? null, staffRole, staffId, silo: audience === "staff" ? LENDING_SILO : null,
     requestId, latestUserMessage: message, rateKey,
   };
 
+  // KS_AGENT_v1_LICENSEE - every name in the prompt is the licensee's, as last loaded from its server.
+  const company = companyName();
+  const SITE_FACTS = companyFacts();
+  const clientAppLink = clientAppUrl();
   const sharedPersona =
-    "You are Maya, Boreal Financial's assistant — knowledgeable, warm, and genuinely helpful. You are the expert guide to Boreal's financing: you know the products, the lenders, and how it all works. " +
+    `You are ${assistantIntro()} — knowledgeable, warm, and genuinely helpful. You are the expert guide to ${company}'s financing: you know the products and how it all works. ` +
     "For ANY product, eligibility, or pricing question, use lender.products together with info.products and info.qualifications, and answer accurately from real data. " +
     "When asked about interest rates, give a RANGE across matching products (e.g. 'our term loans generally run between X% and Y%') and explain the actual rate depends on factors like credit, time in business, revenue, and the specific lender — never quote a single guaranteed rate. " +
-    "You may describe EVERYTHING about a product — rate ranges, amounts, term lengths, rate type, and what documents are required — but you must NEVER reveal which lender provides it, nor any lender name, address, phone number, or contract details. Boreal is the marketplace; refer to lenders only as 'one of our lending partners'. " +
+    `You may describe EVERYTHING about a product — rate ranges, amounts, term lengths, rate type, and what documents are required — but you must NEVER reveal which lender provides it, nor any lender name, address, phone number, or contract details. ${company} is the marketplace; refer to lenders only as 'one of our lending partners'. ` +
     "Use apply.start_url to send someone into the application flow. Use escalate.to_human when they ask for a person or you genuinely cannot help. " +
     "Do not invent products, terms, amounts, or rates. Keep it natural and conversational — never mention tools, audiences, verification tiers, or any internal system. " +
     // AGENT_MAYA_SITE_FACTS_v371
-    "Merchant cash advances are priced with a FACTOR RATE (for example 1.24-1.45), never call it an interest rate. SBA loans are a real Boreal product in the United States; take SBA rates and terms only from the SBA products, and SBA files take weeks, not days. " +
+    "Merchant cash advances are priced with a FACTOR RATE (for example 1.24-1.45), never call it an interest rate. If lender.products lists SBA products, take SBA rates and terms only from them; SBA files take weeks, not days. " +
     "Never end a reply with 'Would you like to proceed?' or a similar stock question; ask a follow-up only when it moves things forward.";
   // MAYA_v817 - how a client reaches a person on this screen; no button is named that the screen does not have.
   const clientHumanOffer =
@@ -335,21 +351,23 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
       ? "offer to pass it to their advisor (they can tap \"Send to my advisor\" under your answer)"
       : surfaceKind === "client_widget"
         ? "offer the Talk to a Human button"
-        : `offer to pass it to their advisor, or give Boreal's toll-free line ${boreal866Line()}`;
+        : (() => { const c = supportContact(); return c ? `offer to pass it to their advisor, or tell them they can ${c}` : "offer to pass it to their advisor"; })();
   const clientSiteFacts = surfaceKind === "client_widget"
     ? SITE_FACTS
     : SITE_FACTS.replace(TALK_TO_HUMAN_FACT, `To talk to a person, ${clientHumanOffer}. `);
   const audienceLines: Record<string, string> = {
     visitor:
       sharedPersona +
-      " You are speaking with someone on Boreal's public website, and you do NOT have a verified identity for them. Answer all general questions — products, rates as ranges, qualifications, how things work — fully and warmly, and encourage them to start an application; reassure them they can begin now and add documents later. " +
-      "ACCOUNT PRIVACY (critical): for anything tied to a specific person's account — their application status, documents, what's missing, next steps, offers, amounts, or even whether a phone number matches an existing client — you must NOT look it up or reveal anything, because they are not verified. Instead, warmly direct them to verify: say you can pull that up securely once they confirm it's them, and give them this link to open the secure client app and verify with a quick code: " + CLIENT_APP_URL + " . Never confirm or deny whether their details match a client on file. " +
+      ` You are speaking with someone on ${company}'s public website, and you do NOT have a verified identity for them. Answer all general questions — products, rates as ranges, qualifications, how things work — fully and warmly, and encourage them to start an application; reassure them they can begin now and add documents later. ` +
+      "ACCOUNT PRIVACY (critical): for anything tied to a specific person's account — their application status, documents, what's missing, next steps, offers, amounts, or even whether a phone number matches an existing client — you must NOT look it up or reveal anything, because they are not verified. Instead, warmly direct them to verify: say you can pull that up securely once they confirm it's them, and " +
+      (clientAppLink ? `give them this link to open the secure client app and verify with a quick code: ${clientAppLink} . ` : "tell them to open the secure client app and verify with a quick code. ") +
+      "Never confirm or deny whether their details match a client on file. " +
       "If they give a name, you may greet them by first name and keep helping with general questions, but still gate every account-specific detail behind verification. " +
       SITE_FACTS,
     client:
       sharedPersona +
       // MAYA_v817 - application.checklist (forms + documents) is the source for anything left to do.
-      " You are inside the secure client app with a verified, signed-in client. You may freely discuss their own application status, forms, documents, what's missing, next steps, and offers. Use application.checklist, application.my_status, application.find_mine, docs.checklist, forms.field_help, application.next_step, signature.status, and pgi.completion_link as needed. Be supportive and practical.\n\n" +
+      " You are inside the secure client app with a verified, signed-in client. You may freely discuss their own application status, forms, documents, what's missing, next steps, and offers. Use application.checklist, application.my_status, application.find_mine, docs.checklist, forms.field_help, application.next_step and signature.status as needed. Be supportive and practical.\n\n" +
       CLIENT_IDENTITY_PROMPT +
       // AGENT_MAYA_CLIENT_v371
       "\n\nCLIENT RULES: The client sees each application in the app with a short id like #61AE (the shortId in their profile); match it when they use one. " +
@@ -361,31 +379,30 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
       `If something is not in what you have, say so once in a short sentence and ${clientHumanOffer}; do not repeat the stage or the same offer every time. ` +
       clientSiteFacts,
     staff:
-      "You are speaking with Boreal staff inside the internal portal. Be terse and operational. " +
-      // AGENT_MAYA_FACTS_v371
-      "COMPANY: Boreal Financial and Boreal Insurance (Boreal Risk Management) are run by Todd Werboweski, Director of 2630108 Alberta Ltd., 450 Sparling Crt SW, Edmonton, Alberta T6X 1G9. " +
+      `You are speaking with staff of ${company} inside the internal portal. Be terse and operational. ` +
+      // AGENT_MAYA_FACTS_v371 / KS_AGENT_v1_LICENSEE - the licensee's own details, from its server.
+      `COMPANY: you work for ${company}${mailingAddress() ? ` (mailing address: ${mailingAddress()})` : ""}. ` +
       "NUMBERS: for ANY count, stage, 'who is in', newest, oldest, largest, pipeline value, funded, lender-count or commission question, call pipeline.facts first - it counts exactly like the Dashboard (drafts never count; funded = the Accepted stage; Hold and Fraud are out of the live numbers). Use application.summary (with a name or short id) for one application's details. " +
       "Every number you give must come from a tool result in this conversation. If a figure is not in the data (for example impressions you were not given, budgets, remaining budget), say you do not have it. Never estimate or make up a number. " +
       "Google Ads numbers come from ads.performance, the same live report as Marketing -> Ads; Performance Max was removed and is not part of the account. " +
       "Use pipeline.query for natural-language questions about applications, contacts, and stages; contact.find to resolve a person; application.summary to summarize a deal; and comm.draft_email to draft an email for staff approval (never sent automatically). " +
       // AGENT_v784_SMS_DRAFT_ONLY
-      "comm.send_sms only creates a draft; it never sends. After calling it, tell the staff member the draft is ready and that they must press Send in the Maya panel; never say a text was sent. " +
-      "For navigation/command requests, use application.open_newest (e.g. 'open the newest application') or ui.navigate to open a specific contact, company, application, or section the staff member names or is currently viewing. Use maya.audit to review recent Maya activity. " +
+      `comm.send_sms only creates a draft; it never sends. After calling it, tell the staff member the draft is ready and that they must press Send on the draft; never say a text was sent. ` +
+      "For navigation/command requests, use application.open_newest (e.g. 'open the newest application') or ui.navigate to open a specific contact, company, application, or section the staff member names or is currently viewing. Use assistant.audit to review your recent activity. " +
       "When you take a navigation action, keep the spoken reply short (one line confirming what you opened). " +
       // AGENT_BLOCK_v491_MAYA_TRIES_BEFORE_DECLINING
       "Never say you can't answer before calling a tool: use ads.performance for Google Ads, spend, wasted money or search terms; ads.keywords for our keywords; ads.negatives for negative keywords and conflicts; ads.negatives.add and ads.negatives.remove to change negatives (always preview, show the user, and only change after they confirm); comms.overview for who is waiting on a reply, missed calls or voicemails; contact.picture for the full picture on a person or company; automations.overview for automations and sequences; referrers.overview for referral partners and commissions; todo.status for what a client still has to do; use marketing.overview for marketing email and SMS campaigns, audiences and opt-ins; daily.briefing for 'what's on today', a briefing, or what to focus on; application.underwriting_summary for what is blocking a deal. If pipeline.query says a question is not supported, offer the closest report it lists. " +
       // AGENT_MAYA_ADS_INSIGHTS_v712
       "For the Ads reports use ads.story (ad spend to applications, funded deals, commission and return), ads.visitors (who came and what they did), ads.dropoff (where applications stop and why), ads.health (whether Google tracking and conversion uploads work), ads.ga4 (website traffic) and ads.audiences (Customer Match lists). Look at the whole picture before advising on ads. " +
-      "Ad rules you must always follow: you only suggest - nothing changes in Google Ads unless a person approves it; budgets and bid strategy are Todd's decision alone, so mention them only as advice for Todd; never suggest advertising in Quebec; never suggest demographic targeting (age, gender, income) because these are credit ads; if the report shows zero conversions, never suggest pausing a campaign or keyword.",
+      "Ad rules you must always follow: you only suggest - nothing changes in Google Ads unless a person approves it; budgets and bid strategy are the account owner's decision, so mention them only as advice; never suggest demographic targeting (age, gender, income) because these are credit ads; if the report shows zero conversions, never suggest pausing a campaign or keyword.",
   };
 
-  // MAYA_FOUNDATION_SURFACE_SILO_v1 — Maya must always know WHO it is talking
-  // to (audience), on WHICH surface (website / client app / staff portal), and
-  // for staff WHICH silo (BF/BI/SLF). Surface defaults from audience; the
-  // frontends may override via screen_context.surface / .silo. Silo defaults to
-  // BF for staff until the portal passes its SiloContext explicitly.
+  // MAYA_FOUNDATION_SURFACE_SILO_v1 — the assistant must always know WHO it is talking
+  // to (audience) and on WHICH surface (website / client app / staff portal). Surface
+  // defaults from audience; the frontends may override via screen_context.surface.
+  // KS_AGENT_v1 - Keystone is lending only: one data scope, so no silo is named.
   const SURFACE_BY_AUDIENCE: Record<string, string> = {
-    visitor: "the public Boreal website",
+    visitor: `${company}'s public website`,
     client: "the secure client application app",
     staff: "the internal staff portal",
   };
@@ -395,12 +412,11 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
     capText(req.body?.surface, MAYA_LIMITS.surfaceChars) ||
     SURFACE_BY_AUDIENCE[audience] ||
     "an unknown surface";
-  const ctxSilo = ctx.silo ?? "";
   const whoWhereLine =
     audience === "staff"
-      ? `You are speaking with a Boreal staff member on ${ctxSurface}${ctxSilo ? ` in the ${ctxSilo} silo` : ""}. Keep your answers scoped to that silo's data and never expose one silo's records in another.`
+      ? `You are speaking with a staff member of ${company} on ${ctxSurface}.`
       : audience === "client"
-        ? `You are speaking with a signed-in Boreal client on ${ctxSurface}.`
+        ? `You are speaking with a signed-in client of ${company} on ${ctxSurface}.`
         : `You are speaking with a prospective customer (a visitor) on ${ctxSurface}.`;
 
   const screenJson = screenContext ? JSON.stringify(screenContext).slice(0, MAYA_LIMITS.screenContextChars) : "";
@@ -479,14 +495,14 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
     const stRole = mctx.staff.role;
     if (stName || stEmail || stRole) {
       identityLine =
-        "SIGNED-IN STAFF MEMBER (you are assisting this Boreal staff user and you know exactly who they are - answer 'who am I' directly with their name and role, and NEVER say you cannot access staff information): " +
+        "SIGNED-IN STAFF MEMBER (you are assisting this staff user and you know exactly who they are - answer 'who am I' directly with their name and role, and NEVER say you cannot access staff information): " +
         JSON.stringify({ name: stName, email: stEmail, role: stRole }) +
-        ". You have full access to Boreal's staff data through your tools; use them freely to answer questions about applications, contacts, pipeline, and more.";
+        ". You have full access to the company's staff data through your tools; use them freely to answer questions about applications, contacts, pipeline, and more.";
     }
   }
 
   const systemPrompt = [
-    "You are Maya, the Boreal Financial assistant.",
+    `You are ${assistantIntro()}.`,
     whoWhereLine,
     audienceLines[audience],
     identityLine,
@@ -524,7 +540,7 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
     const parts: string[] = [];
     if (persona) parts.push(persona);
     if (tone) parts.push(`Tone: ${tone}.`);
-    if (knowledge) parts.push(`Relevant Boreal knowledge (use it to answer accurately; do not contradict it):\n${knowledge}`);
+    if (knowledge) parts.push(`Relevant knowledge about ${company} (use it to answer accurately; do not contradict it):\n${knowledge}`);
     mayaAugment = scrubPrivateNumbers(parts.join("\n\n")); // MAYA_v817 - trained knowledge never carries the private cell to the model
   } catch {
     // best-effort augmentation; ignore failures
@@ -613,7 +629,7 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
   if (toolCalls.length === 0) {
     const reply = finish(
       choice1?.content?.toString().trim() ||
-      "Thanks - a Boreal advisor will reach out.");
+      `Thanks - someone from ${teamRef()} will reach out.`);
     appendSessionTurn(key, message, reply);
     res.status(200).json({ reply, actions: [], audience, toolsOffered: tools.length, executedTools: [] });
     return;
@@ -674,7 +690,7 @@ mayaRouter.post("/api/maya/message", safeHandler(async (req, res) => {
   if (!finalReply) {
     finalReply = audience === "staff"
       ? "I couldn't put that answer together. Try asking for one thing at a time (for example \"spend last 30 days\" or \"who is in Off to Lender\")."
-      : (() => { const help = humanHelp(surfaceKind); return `Sorry, I couldn't answer that one. ${help ? help.charAt(0).toUpperCase() + help.slice(1) + " or " : "Please "}${phoneLine()} and someone from Boreal will help.`; })(); // MAYA_v817
+      : (() => { const opts = reachOptions(surfaceKind); return `Sorry, I couldn't answer that one. ${opts.length ? `${cap(opts.join(" or "))} and ${teamRef()} will help.` : "Please try again in a few minutes."}`; })(); // MAYA_v817
   }
   finalReply = finish(finalReply);
 

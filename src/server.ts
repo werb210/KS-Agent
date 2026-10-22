@@ -1,12 +1,20 @@
 import type { Server } from "http";
 import { createApp } from "./app.js";
 import { validateEnv } from "./startup/validateEnv.js";
+import { startLicenseeRefresh, loadedLicensee } from "./licensee/brand.js";
 
 export async function startServer() {
   const envStatus = validateEnv();
   const { app, dependencies } = createApp({ envStatus });
 
   await dependencies.initAll();
+
+  // KS_AGENT_v1_LICENSEE - the licensee's names and contacts, from GET {SERVER_URL}/api/licensee, now and every
+  // 5 minutes. Startup waits at most a few seconds for the first load; until it succeeds the KS_* settings apply.
+  const licensee = startLicenseeRefresh();
+  await licensee.ready;
+  const brand = loadedLicensee();
+  console.log(JSON.stringify({ event: "licensee_loaded", ok: Boolean(brand), company: brand?.company_name ?? null, assistant: brand?.assistant_name ?? null }));
 
   const [db, redis, externalApi, openai, twilio] = await Promise.all([
     dependencies.db.status(),
@@ -53,6 +61,7 @@ export async function startServer() {
     shuttingDown = true;
 
     shutdownPromise = (async () => {
+      licensee.stop();
       try {
         await dependencies.closeAll();
       } catch {

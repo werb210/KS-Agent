@@ -276,7 +276,7 @@ export async function applicationResumeLink(args: ResumeLinkArgs) {
     ok: true,
     application_id: applicationId,
     resume_url: null,
-    summary: "Your progress is saved. Just reopen the Boreal application app and sign in with your phone — your application will be waiting where you left off.",
+    summary: "Your progress is saved. Just reopen the application app and sign in with your phone — your application will be waiting where you left off.",
   };
 }
 export const APPLICATION_RESUME_LINK_TOOL_DESCRIPTOR = {

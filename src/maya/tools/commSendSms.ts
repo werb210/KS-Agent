@@ -1,7 +1,7 @@
 // MAYA_STAFF_SEND_SMS - AGENT_v784_SMS_DRAFT_ONLY: the tool only creates a draft on BF-Server.
-// The staff member sends it by pressing Send in the Maya panel; the model can never send.
+// The staff member sends it by pressing Send on the draft in the portal's assistant panel; the model can never send.
 import { callBFServer } from "../../integrations/bfServerClient.js";
-export const SMS_DRAFT_REPLY = "Draft ready - press Send in the Maya panel to send it. It has NOT been sent.";
+export const SMS_DRAFT_REPLY = "Draft ready - press Send on the draft to send it. It has NOT been sent.";
 export type CommSendSmsArgs = { contact_id?: string; to?: string; body: string; session_id?: string; staff_user_id?: string };
 export type CommSendSmsResult = { ok: boolean; pending?: boolean; pendingId?: string; preview?: unknown; message?: string; error?: string };
 type DraftResponse = { pending?: unknown; pendingId?: unknown; preview?: unknown; error?: unknown };
@@ -41,7 +41,7 @@ export const COMM_SEND_SMS_TOOL_DESCRIPTOR = {
   function: {
     name: "comm.send_sms",
     description:
-      "Prepare an SMS to a contact as a DRAFT. This never sends: the staff member must press Send in the Maya panel. After calling it, reply exactly: \"" + SMS_DRAFT_REPLY + "\" If it fails, say the draft could not be created. Put the message in 'body' and the recipient in contact_id (preferred) or to.",
+      "Prepare an SMS to a contact as a DRAFT. This never sends: the staff member must press Send on the draft. After calling it, reply exactly: \"" + SMS_DRAFT_REPLY + "\" If it fails, say the draft could not be created. Put the message in 'body' and the recipient in contact_id (preferred) or to.",
     parameters: {
       type: "object",
       properties: {

@@ -15,7 +15,7 @@ async function run() {
   // AGENT_BLOCK_v81_BUILD_FINGERPRINT
   const BUILD_TAG = process.env.BUILD_TAG || "v81-local";
   const COMMIT_SHA = (process.env.COMMIT_SHA || "unknown").slice(0, 8);
-  console.log(`MAYA process start build=${BUILD_TAG} sha=${COMMIT_SHA} at=${new Date().toISOString()}`);
+  console.log(`agent process start build=${BUILD_TAG} sha=${COMMIT_SHA} at=${new Date().toISOString()}`);
   if (process.env.NODE_ENV === "production" && !fs.existsSync("./dist/index.js")) {
     throw new Error("DIST_MISSING");
   }
@@ -53,17 +53,17 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv = process.env): voi
     console.warn(
       "[WARN] AGENT_API_TOKEN is not set or is test_token. " +
         "Set this in Azure App Service → Configuration. " +
-        "Maya will start in degraded mode.",
+        "The assistant will start in degraded mode.",
     );
   }
 
   if (!env.JWT_SECRET || env.JWT_SECRET === "test_secret") {
-    console.warn("[WARN] JWT_SECRET must be set in production. Maya will start in degraded mode.");
+    console.warn("[WARN] JWT_SECRET must be set in production (the same value as the licensee's server). The assistant will start in degraded mode.");
   }
 
   if (!env.SERVER_URL) {
     console.warn(
-      "[WARN] SERVER_URL not set — Maya cannot persist escalations or issues. Set to https://server.boreal.financial.",
+      "[WARN] SERVER_URL not set — the assistant cannot load the licensee's name or reach its data. Set it to the licensee's server address (https://...).",
     );
   }
 

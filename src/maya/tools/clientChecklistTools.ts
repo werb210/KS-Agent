@@ -7,6 +7,7 @@
 //     (Personal Net Worth) and Professional Advisors forms asks for, from the real form labels in BF-client
 //     (pages/mini-portal/forms/forms/*.tsx). Maya explains; she never fills a form in.
 import { callBFServer } from "../../integrations/bfServerClient.js";
+import { companyName } from "../../licensee/brand.js";
 
 const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
@@ -121,7 +122,7 @@ export const CLIENT_FORMS: ReadonlyArray<FormHelp> = [
       {
         name: "Disclosures (Yes / No)",
         fields: [
-          { label: "Previous dealings with Boreal Financial (any division or subsidiary)?", help: "Yes if you have dealt with Boreal before." },
+          { label: "Previous dealings with {company} (any division or subsidiary)?", help: "Yes if you have dealt with {company} before." },
           { label: "Ever filed for bankruptcy, consumer proposal, or any form of insolvency?", help: "Answer for yourself (and your spouse on a joint declaration)." },
           { label: "Ever convicted of a criminal offence not pardoned?", help: "Answer truthfully." },
           { label: "Income taxes for previous year(s) fully satisfied?", help: "Yes if all past personal income taxes are paid." },
@@ -145,7 +146,7 @@ export const CLIENT_FORMS: ReadonlyArray<FormHelp> = [
     form: "professional_advisors",
     title: "Professional Advisors",
     also_called: ["advisors", "accountant, lawyer and insurance agent"],
-    intro: "Your accountant, lawyer and insurance agent, so Boreal Financial can coordinate with them. If you don't have one, you can still submit.",
+    intro: "Your accountant, lawyer and insurance agent, so {company} can coordinate with them. If you don't have one, you can still submit.",
     sections: [
       {
         name: "Advisors (CPA / Accounting Firm, Attorney / Law Firm, Insurance Agent; \"+ A/R Credit Insurance\" adds a fourth)",
@@ -170,7 +171,7 @@ export const CLIENT_FORMS: ReadonlyArray<FormHelp> = [
       },
       {
         name: "Financial Advisor / Consultant",
-        fields: [{ label: "I authorize Boreal Financial to discuss this proposed credit facility with any of its lending partners.", help: "Boreal Financial is your financial advisor on this file; this box must be ticked to submit." }],
+        fields: [{ label: "I authorize {company} to discuss this proposed credit facility with any of its lending partners.", help: "{company} is your financial advisor on this file; this box must be ticked to submit." }],
       },
     ],
     notes: [
@@ -190,11 +191,18 @@ function findForm(q: string): FormHelp | null {
   return null;
 }
 
+// KS_AGENT_v1_LICENSEE - "{company}" in a form label is the licensee's name, as the client app shows it.
+export function withCompany<T>(value: T, company: string = companyName()): T {
+  const safe = JSON.stringify(company).slice(1, -1);
+  return JSON.parse(JSON.stringify(value).split("{company}").join(safe)) as T;
+}
+
 export type FormsFieldHelpArgs = { form?: string; field?: string };
 export async function formsFieldHelp(args: FormsFieldHelpArgs) {
-  const form = findForm(s(args?.form) ?? s(args?.field) ?? "");
+  const found = findForm(s(args?.form) ?? s(args?.field) ?? "");
+  const form = found ? withCompany(found) : null;
   if (!form) {
-    return { ok: true, forms: CLIENT_FORMS.map((f) => ({ title: f.title, also_called: f.also_called, intro: f.intro })), rule: RULE, summary: "Tell me which form (Debt Schedule, Personal Statement of Affairs or Professional Advisors) and I'll explain its fields." };
+    return { ok: true, forms: withCompany(CLIENT_FORMS.map((f) => ({ title: f.title, also_called: f.also_called, intro: f.intro }))), rule: RULE, summary: "Tell me which form (Debt Schedule, Personal Statement of Affairs or Professional Advisors) and I'll explain its fields." };
   }
   const field = s(args?.field)?.toLowerCase() ?? "";
   const words = field.split(/[^a-z0-9]+/).filter((w) => w.length > 2);

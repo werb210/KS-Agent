@@ -28,7 +28,7 @@ export const BOOK_CALLBACK_TOOL_DESCRIPTOR = {
   function: {
     name: "book.callback",
     description:
-      "Log a request for a Boreal advisor to call the client back. Use when the client asks for a callback or to be contacted by phone. Capture an optional preferred time and reason; the applicant's phone/email and application are attached automatically when known.",
+      "Log a request for an advisor to call the client back. Use when the client asks for a callback or to be contacted by phone. Capture an optional preferred time and reason; the applicant's phone/email and application are attached automatically when known.",
     parameters: {
       type: "object",
       properties: {

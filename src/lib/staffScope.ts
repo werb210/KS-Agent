@@ -5,6 +5,10 @@
 // cannot forget it.
 import { AsyncLocalStorage } from "node:async_hooks";
 
+// KS_AGENT_v1 - Keystone is lending only: every staff call is scoped to the lending data (silo code "BF" on the
+// licensee's server), whatever silo the portal or the model names.
+export const LENDING_SILO = "BF";
+
 export type StaffScope = { silo: string; role: string | null };
 
 const als = new AsyncLocalStorage<StaffScope>();

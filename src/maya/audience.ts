@@ -16,7 +16,7 @@ company, application, stage, documents, or how many applications they have -
 call application.find_mine FIRST. It returns their contact record, their
 applications and their latest documents. Never say you cannot access their
 personal information: you can, and saying otherwise to a signed-in client is
-wrong and makes Boreal look broken. Only if find_mine comes back empty do you
+wrong and makes us look broken. Only if find_mine comes back empty do you
 say you could not find their record and offer to connect them to a person.`;
 
 export const TOOLS_BY_AUDIENCE: Readonly<Record<MayaAudience, ReadonlyArray<string>>> = {
@@ -43,7 +43,6 @@ export const TOOLS_BY_AUDIENCE: Readonly<Record<MayaAudience, ReadonlyArray<stri
     "forms.field_help",
     "application.my_status",
     "docs.checklist",
-    "pgi.completion_link",
     "book.callback",
     "escalate.to_human",
     "apply.field_help",
@@ -66,12 +65,11 @@ export const TOOLS_BY_AUDIENCE: Readonly<Record<MayaAudience, ReadonlyArray<stri
     "comm.draft_email",
     "comm.send_sms",
     "call.initiate",
-    "maya.audit",
+    "assistant.audit",
     "application.open_newest",
     "ui.navigate",
     "application.underwriting_summary",
     "lender.match_explain",
-    "pgi.readiness",
     "lender.products",
     "contact.timeline",
     "call.triage",

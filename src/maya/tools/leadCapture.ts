@@ -1,10 +1,11 @@
 // AGENT_BLOCK_v4_VISITOR_TOOLS_v1
 // Visitor-audience tools. lead.capture pushes a website lead into
-// BF's CRM via BF-Server's existing /api/crm/startup-waitlist
+// licensee's CRM via its server's /api/crm/startup-waitlist
 // endpoint (which the marketing website already uses for the
-// startup waitlist flow). apply.start_url returns the canonical
-// /apply URL — the public funding application wizard.
+// startup waitlist flow). apply.start_url returns the licensee's
+// client app — the public funding application wizard.
 import { callBFServer } from "../../integrations/bfServerClient.js";
+import { clientAppUrl } from "../../licensee/brand.js";
 
 export type LeadCaptureArgs = {
   name?: string;
@@ -52,7 +53,7 @@ export async function leadCapture(args: LeadCaptureArgs): Promise<LeadCaptureRes
         companyName: company,
         message,
         channel: "website",
-        source: "maya_visitor_tool",
+        source: "assistant_visitor_tool",
         utm_source: s(args?.utm_source),
       },
     });
@@ -93,7 +94,12 @@ export type ApplyStartUrlResult = {
 };
 
 export async function applyStartUrl(_args?: ApplyStartUrlArgs): Promise<ApplyStartUrlResult> {
-  const url = "https://client.boreal.financial/";
+  // KS_AGENT_v1_LICENSEE - the licensee's client app (urls.client from GET /api/licensee, else CLIENT_URL).
+  const base = clientAppUrl();
+  if (!base) {
+    return { ok: false, url: "", summary: "The application link is not available right now. Offer to connect them with the team instead (escalate.to_human)." };
+  }
+  const url = `${base}/`;
   return {
     ok: true,
     url,
@@ -106,7 +112,7 @@ export const APPLY_START_URL_TOOL_DESCRIPTOR = {
   function: {
     name: "apply.start_url",
     description:
-      "Return the URL where a visitor can start a Boreal Financial loan application. Use when the visitor says 'I want to apply', 'how do I get started', 'where do I sign up'. IMPORTANT: always CALL this tool to get the real URL, then use the returned `url` value verbatim in your reply. Never write the literal text 'apply.start_url' as a link or URL — that is the tool name, not a URL.",
+      "Return the URL where a visitor can start a loan application with the company. Use when the visitor says 'I want to apply', 'how do I get started', 'where do I sign up'. IMPORTANT: always CALL this tool to get the real URL, then use the returned `url` value verbatim in your reply. Never write the literal text 'apply.start_url' as a link or URL — that is the tool name, not a URL.",
     parameters: {
       type: "object",
       properties: {},

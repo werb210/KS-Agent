@@ -72,17 +72,20 @@ export function createDependencies(env: NodeJS.ProcessEnv = process.env): Runtim
     return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_PHONE_NUMBER);
   }
 
+  // KS_AGENT_v1_CONFIG - the agent keeps no database or Redis of its own and sends no SMS itself (the licensee's
+  // server does), so those adapters are optional and only report "degraded" when unset. OpenAI and the licensee's
+  // server (SERVER_URL) are what the agent cannot answer without.
   const db = createAdapter({
-    mode: "required",
+    mode: "optional",
     configured: Boolean(env.DATABASE_URL),
     check: checkDb,
   });
   const redis = createAdapter({
-    mode: "required",
+    mode: "optional",
     configured: Boolean(env.REDIS_URL),
   });
   const openai = createAdapter({
-    mode: "optional",
+    mode: "required",
     configured: Boolean(env.OPENAI_API_KEY),
   });
   const twilio = createAdapter({
@@ -91,7 +94,7 @@ export function createDependencies(env: NodeJS.ProcessEnv = process.env): Runtim
   });
   const externalApi = createAdapter({
     mode: "required",
-    configured: Boolean(env.EXTERNAL_API_BASE_URL),
+    configured: Boolean(env.SERVER_URL || env.BASE_URL),
   });
 
   return {

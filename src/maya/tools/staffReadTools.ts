@@ -1,6 +1,6 @@
 // MAYA_BATCH_B_STAFF_READS_v1
 // Four read-only staff tools. Thin pass-throughs to BF-Server /api/maya/staff/*
-// (service-JWT authed by callBFServer). BF-silo data.
+// (service-JWT authed by callBFServer). Lending data.
 import { callBFServer } from "../../integrations/bfServerClient.js";
 
 type Result = { ok: boolean; [k: string]: unknown };
@@ -32,7 +32,7 @@ export const LENDER_PRODUCTS_TOOL_DESCRIPTOR = {
   function: {
     name: "lender.products",
     description:
-      "Look up Boreal's active lender products by category (TERM, LOC, EQUIPMENT, etc.), country, and/or deal amount. Returns which lenders offer what, with amount ranges AND interest-rate ranges (interestMin/interestMax). Read-only and safe for any audience — contains no client-specific data. Use it to answer ANY product or pricing question, e.g. 'what's the interest rate on a term loan', 'do you do equipment financing', 'what LOC options are there in Canada'. The response has `ranges` (min/max amount and rate per category and rate kind, computed over EVERY matching product) and `products` (a sample of at most 50). ALWAYS quote funding limits, amounts and rates from `ranges`, never from `products`, and never mix APR, monthly and factor rates. When asked about rates, summarize as a RANGE from `ranges` (e.g. 'our term loans generally run between X% and Y%') and add that the actual rate depends on factors like credit, time in business, revenue, and the specific lender — never quote a single guaranteed rate.",
+      "Look up the company's active lender products (its own lending partners) by category (TERM, LOC, EQUIPMENT, etc.), country, and/or deal amount. Returns which lenders offer what, with amount ranges AND interest-rate ranges (interestMin/interestMax). Read-only and safe for any audience — contains no client-specific data. Use it to answer ANY product or pricing question, e.g. 'what's the interest rate on a term loan', 'do you do equipment financing', 'what LOC options are there in Canada'. The response has `ranges` (min/max amount and rate per category and rate kind, computed over EVERY matching product) and `products` (a sample of at most 50). ALWAYS quote funding limits, amounts and rates from `ranges`, never from `products`, and never mix APR, monthly and factor rates. When asked about rates, summarize as a RANGE from `ranges` (e.g. 'our term loans generally run between X% and Y%') and add that the actual rate depends on factors like credit, time in business, revenue, and the specific lender — never quote a single guaranteed rate.",
     parameters: { type: "object", properties: { category: { type: "string", description: "Product category short code, e.g. TERM, LOC, EQUIPMENT." }, country: { type: "string", description: "Country filter, e.g. CA or US." }, amount: { type: "number", description: "Deal amount to match against product min/max." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: [] },
   },
 };
@@ -49,7 +49,7 @@ export const CONTACT_TIMELINE_TOOL_DESCRIPTOR = {
     name: "contact.timeline",
     description:
       "Read-only activity timeline for a contact: recent calls and messages (SMS/email) in reverse-chronological order. Use when staff ask 'what's the history with this contact', 'when did we last talk to them', 'show me recent activity'. Provide the contact_id on the current screen; pass the active silo if known.",
-    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to show history for (use the id on the current screen)." }, silo: { type: "string", description: "Active silo (BF/BI/SLF) to scope call activity." }, limit: { type: "number", description: "Max items to return (default 25)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: ["contact_id"] },
+    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to show history for (use the id on the current screen)." }, limit: { type: "number", description: "Max items to return (default 25)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: ["contact_id"] },
   },
 };
 
@@ -63,7 +63,7 @@ export const CALL_TRIAGE_TOOL_DESCRIPTOR = {
     name: "call.triage",
     description:
       "Read-only list of recent voicemails and missed calls that need follow-up. Use when staff ask 'any voicemails today', 'who do I need to call back', 'what missed calls are outstanding'. Pass the active silo to scope missed calls.",
-    parameters: { type: "object", properties: { silo: { type: "string", description: "Active silo (BF/BI/SLF) to scope missed calls." }, limit: { type: "number", description: "Max items per list (default 15)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: [] },
+    parameters: { type: "object", properties: { limit: { type: "number", description: "Max items per list (default 15)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: [] },
   },
 };
 
@@ -111,7 +111,7 @@ export const CRM_ADD_NOTE_TOOL_DESCRIPTOR = {
   function: {
     name: "crm.add_note",
     description: "Add a note to a CRM contact. Use when staff say 'log a note', 'note that ...', 'add to this contact'. Provide the contact_id on the current screen and the note body.",
-    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to add the note to." }, body: { type: "string", description: "The note text." }, silo: { type: "string", description: "Active silo (BF/BI/SLF)." }, session_id: { type: "string" } }, required: ["contact_id", "body"] },
+    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to add the note to." }, body: { type: "string", description: "The note text." }, session_id: { type: "string" } }, required: ["contact_id", "body"] },
   },
 };
 
@@ -142,7 +142,7 @@ export const CRM_CREATE_TASK_TOOL_DESCRIPTOR = {
   function: {
     name: "crm.create_task",
     description: "Create a task on a CRM contact. Use when staff say 'create a task', 'remind me to ...', 'follow up with this contact'. Provide the contact_id on the current screen and a title; optionally due_at (ISO date) and priority (high/medium/low/none).",
-    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to create the task for." }, title: { type: "string", description: "Task title." }, due_at: { type: "string", description: "Optional ISO due date." }, priority: { type: "string", description: "high | medium | low | none." }, notes: { type: "string", description: "Optional task notes." }, silo: { type: "string" }, session_id: { type: "string" } }, required: ["contact_id", "title"] },
+    parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to create the task for." }, title: { type: "string", description: "Task title." }, due_at: { type: "string", description: "Optional ISO due date." }, priority: { type: "string", description: "high | medium | low | none." }, notes: { type: "string", description: "Optional task notes." }, session_id: { type: "string" } }, required: ["contact_id", "title"] },
   },
 };
 
@@ -156,7 +156,7 @@ export const MARKETING_OVERVIEW_TOOL_DESCRIPTOR = {
   function: {
     name: "marketing.overview",
     description: "Read marketing audience sizes and recent campaign sends: email + SMS opt-in totals, the available segments (contact tags) with recipient counts, and the last few send jobs. Use this before proposing a campaign so you know how many people a segment reaches. Pass the active silo if known.",
-    parameters: { type: "object", properties: { silo: { type: "string", description: "Active silo (BF/BI/SLF)." }, session_id: { type: "string" } }, required: [] },
+    parameters: { type: "object", properties: { session_id: { type: "string" } }, required: [] },
   },
 };
 // AGENT_v789_PENDING_ACTIONS - marketing.send_campaign only PREVIEWS (or sends a single test to the

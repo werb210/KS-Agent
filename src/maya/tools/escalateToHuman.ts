@@ -4,10 +4,11 @@
 // BF-Server's /api/communications/maya-handoff (which writes to
 // maya_escalations + communications_messages AND fans Twilio SMS).
 // recipients='available' when at least one staffer is available,
-// 'fallback' otherwise (operator's MAYA_FALLBACK_SMS_NUMBERS env
-// covers Andrew + Todd after-hours).
+// 'fallback' otherwise (the licensee's server decides who is on call
+// after hours).
 import { callBFServer } from "../../integrations/bfServerClient.js";
 import { getAvailableStaff } from "../../services/staffAvailability.js";
+import { LENDING_SILO } from "../../lib/staffScope.js";
 
 // AGENT_BLOCK_v328_ESCALATE_PHONE_PASSTHROUGH_v1
 export type EscalateToHumanArgs = {
@@ -34,7 +35,8 @@ export type EscalateToHumanResult = {
 export async function escalateToHuman(args: EscalateToHumanArgs): Promise<EscalateToHumanResult> {
   const summary = typeof args?.summary === "string" ? args.summary.slice(0, 1000) : null;
   const surface = typeof args?.surface === "string" ? args.surface.slice(0, 50) : "website";
-  const silo = typeof args?.silo === "string" ? args.silo.slice(0, 10) : "BF";
+  // KS_AGENT_v1 - lending only: every handoff belongs to the lending data, whatever the model sent.
+  const silo = LENDING_SILO;
   const sessionId = typeof args?.session_id === "string" ? args.session_id : null;
   // AGENT_BLOCK_v328_ESCALATE_PHONE_PASSTHROUGH_v1 — pass identifying hints
   // so BF-Server resolves the contact and surfaces the handoff in the
@@ -112,11 +114,6 @@ export const ESCALATE_TO_HUMAN_TOOL_DESCRIPTOR = {
           type: "string",
           enum: ["website", "client", "portal"],
           description: "Which surface the visitor is on.",
-        },
-        silo: {
-          type: "string",
-          enum: ["BF", "BI", "SLF"],
-          description: "Which silo this handoff belongs to. Default BF.",
         },
         // AGENT_v789_HANDOFF_IDENTITY - no phone, email, application_id or contact_id here:
         // they come from the verified session, never from the model.

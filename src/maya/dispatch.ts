@@ -8,7 +8,7 @@ import { isToolAllowed, type MayaAudience } from "./audience.js";
 import { lookupTool } from "./toolRegistry.js";
 
 import { sessionKey } from "./sessionKey.js";
-import { runInStaffScope } from "../lib/staffScope.js";
+import { runInStaffScope, LENDING_SILO } from "../lib/staffScope.js";
 import { callBFServer } from "../integrations/bfServerClient.js";
 import {
   CONFIRM_TOOL, confirmAvailable, getPendingAction, clearPendingAction, storePendingAction,
@@ -96,7 +96,6 @@ const CLIENT_APP_TOOLS = new Set([
   "application.checklist", // MAYA_v817 - gets the request's / resolved application id and the verified phone (BF-Server checks ownership)
   "application.my_status",
   "docs.checklist",
-  "pgi.completion_link",
   "docs.rejections",
   "offer.explain",
   "application.next_step",
@@ -132,7 +131,7 @@ export function injectContext(
     // stamps them onto the request body too, see src/lib/staffScope.ts).
     const args: Record<string, unknown> = {
       ...omit(modelArgs, AUTHORITY_KEYS),
-      silo: ctx.silo || "BF",
+      silo: LENDING_SILO,
       role: ctx.staffRole ?? undefined,
       ...(sessionId ? { session_id: sessionId } : {}),
     };
@@ -284,7 +283,7 @@ export async function dispatchTool(
   const run = (): Promise<unknown> => (toolName === CONFIRM_TOOL ? runConfirm(ctx) : entry.run(args));
   try {
     const result = ctx.audience === "staff"
-      ? await runInStaffScope({ silo: ctx.silo || "BF", role: ctx.staffRole ?? null }, run)
+      ? await runInStaffScope({ silo: LENDING_SILO, role: ctx.staffRole ?? null }, run)
       : await run();
     if (HANDOFF_TOOLS.has(toolName)) finishHandoff(handoffKey, (result as { ok?: unknown })?.ok === true);
     // v431 - remember what find_mine resolved so the follow-up tools can use it.

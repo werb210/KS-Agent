@@ -100,7 +100,7 @@ export const PIPELINE_QUERY_TOOL_DESCRIPTOR = {
   function: {
     name: "pipeline.query",
     description:
-      "Run a natural-language pipeline question against the BF backend. Use this for staff queries about applications, contacts, stages, approvals, submissions, and BF/BI pipeline counts (e.g. 'oldest active application', 'approvals this week', 'apps missing bank statements', 'submissions today', 'contacts touched today'). The server holds the allowlist of supported intents and will return supported_queries if the question doesn't match.",
+      "Run a natural-language pipeline question against the company's server. Use this for staff queries about applications, contacts, stages, approvals, submissions, and pipeline counts (e.g. 'oldest active application', 'approvals this week', 'apps missing bank statements', 'submissions today', 'contacts touched today'). The server holds the allowlist of supported intents and will return supported_queries if the question doesn't match.",
     parameters: {
       type: "object",
       properties: {

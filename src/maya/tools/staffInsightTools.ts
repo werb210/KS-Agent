@@ -19,7 +19,8 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   type: "function" as const,
   function: { name, description, parameters: { type: "object", properties: { ...properties, session_id: { type: "string", description: "Optional session id." } }, required } },
 });
-const silo = { silo: { type: "string", description: "Active silo (BF/BI/SLF). Defaults to BF." } };
+// KS_AGENT_v1 - lending only: the silo is always set from the verified context, so the model is not asked for one.
+const silo = {};
 
 // AGENT_MAYA_FACTS_v371 - one snapshot of the pipeline built with the Dashboard's rules (no drafts; funded = Accepted).
 export async function pipelineFacts(a: { silo?: string; role?: string; session_id?: string }): Promise<Result> {
@@ -42,7 +43,7 @@ export async function contactPicture(a: { contact_id?: string; company_id?: stri
   if (!contactId && !companyId) return { ok: false, error: "contact_id_or_company_id_required" };
   return call("/api/maya/staff/contact-picture", { contact_id: contactId, company_id: companyId, silo: s(a?.silo), session_id: s(a?.session_id) });
 }
-export const CONTACT_PICTURE_TOOL_DESCRIPTOR = tool("contact.picture", "The full picture on one contact or company: profile, applications, how they found us (Google Ads click, keyword and search term, referral, capital readiness check), website journey, Maya chat, per application the client's to-dos, documents, lender submissions, offers, signing and PGI stage, their Boreal Insurance record, and recent activity. Use for 'give me the full picture on X', 'what's the story with this client', 'where did this lead come from'. Resolve a name with contact.find first; use the id on screen for 'this contact'.", { contact_id: { type: "string", description: "Contact id." }, company_id: { type: "string", description: "Company id (alternative to contact_id)." }, ...silo });
+export const CONTACT_PICTURE_TOOL_DESCRIPTOR = tool("contact.picture", "The full picture on one contact or company: profile, applications, how they found us (Google Ads click, keyword and search term, referral, capital readiness check), website journey, assistant chats, per application the client's to-dos, documents, lender submissions, offers and signing, and recent activity. Use for 'give me the full picture on X', 'what's the story with this client', 'where did this lead come from'. Resolve a name with contact.find first; use the id on screen for 'this contact'.", { contact_id: { type: "string", description: "Contact id." }, company_id: { type: "string", description: "Company id (alternative to contact_id)." }, ...silo });
 
 export async function automationsOverview(a: { silo?: string; session_id?: string }): Promise<Result> {
   return call("/api/maya/staff/automations-overview", { silo: s(a?.silo), session_id: s(a?.session_id) });
@@ -59,4 +60,4 @@ export async function todoStatus(a: { application_id?: string; session_id?: stri
   if (!appId) return { ok: false, error: "application_id_required" };
   return call("/api/maya/staff/todo-status", { application_id: appId, session_id: s(a?.session_id) });
 }
-export const TODO_STATUS_TOOL_DESCRIPTOR = tool("todo.status", "What the client still has to do on a deal (documents, forms, PGI, SBA forms, signing; rejected items flagged), what they have completed, and documents that were shared in from their other applications. Use for 'what are we waiting on from the client', 'what's outstanding on this deal'. Provide application_id (the one on screen for 'this deal').", { application_id: { type: "string", description: "The application." } }, ["application_id"]);
+export const TODO_STATUS_TOOL_DESCRIPTOR = tool("todo.status", "What the client still has to do on a deal (documents, forms, SBA forms, signing; rejected items flagged), what they have completed, and documents that were shared in from their other applications. Use for 'what are we waiting on from the client', 'what's outstanding on this deal'. Provide application_id (the one on screen for 'this deal').", { application_id: { type: "string", description: "The application." } }, ["application_id"]);

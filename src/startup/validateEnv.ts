@@ -19,15 +19,14 @@ const OPTIONAL_ENV_VARS = [
   "TWILIO_PHONE_NUMBER",
   "REDIS_URL",
   "DATABASE_URL",
-  "EXTERNAL_API_BASE_URL",
 ] as const;
 
 export function validateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidationStatus {
   if (env.NODE_ENV === "production") {
+    // KS_AGENT_v1_CONFIG - the settings the agent needs (PORT is set by App Service); SMS goes through the
+    // licensee's server, so no Twilio settings are needed here.
     const required = [
-      "TWILIO_ACCOUNT_SID",
-      "TWILIO_AUTH_TOKEN",
-      "TWILIO_PHONE_NUMBER",
+      "SERVER_URL",
       "OPENAI_API_KEY",
       "JWT_SECRET",
     ] as const;
@@ -40,7 +39,7 @@ export function validateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
       if (!env[key]) {
         console.warn(
           `[WARN] Missing production env var: ${key}. ` +
-            `Maya will start in degraded mode. ` +
+            `The assistant will start in degraded mode. ` +
             `Set it in Azure App Service → Configuration.`,
         );
       }

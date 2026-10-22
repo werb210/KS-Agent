@@ -35,12 +35,11 @@ export const CONTACT_FIND_TOOL_DESCRIPTOR = {
   function: {
     name: "contact.find",
     description:
-      "Find a CRM contact by name, email, phone, or company. Use this to resolve who a staff member is referring to before summarizing a deal or drafting an email. Returns up to 10 matches with id, name, email, phone, company, lead status, and silo.",
+      "Find a CRM contact by name, email, phone, or company. Use this to resolve who a staff member is referring to before summarizing a deal or drafting an email. Returns up to 10 matches with id, name, email, phone, company and lead status.",
     parameters: {
       type: "object",
       properties: {
         query: { type: "string", description: "Name, email, phone, or company to search for." },
-        silo: { type: "string", description: "Optional silo filter: BF, BI, or SLF." },
         session_id: { type: "string", description: "Optional session id for audit/correlation." },
       },
       required: ["query"],

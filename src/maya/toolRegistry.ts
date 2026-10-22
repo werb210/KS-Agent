@@ -8,7 +8,6 @@ import { isToolAllowed, type MayaAudience } from "./audience.js";
 import { pipelineQuery, PIPELINE_QUERY_TOOL_DESCRIPTOR } from "./tools/pipelineQuery.js";
 import { applicationStatus, APPLICATION_STATUS_TOOL_DESCRIPTOR } from "./tools/applicationStatus.js";
 import { docsChecklist, DOCS_CHECKLIST_TOOL_DESCRIPTOR } from "./tools/docsChecklist.js";
-import { pgiCompletionLink, PGI_COMPLETION_LINK_TOOL_DESCRIPTOR } from "./tools/pgiCompletionLink.js";
 import { infoProducts, INFO_PRODUCTS_TOOL_DESCRIPTOR, infoQualifications, INFO_QUALIFICATIONS_TOOL_DESCRIPTOR } from "./tools/info.js";
 import { leadCapture, LEAD_CAPTURE_TOOL_DESCRIPTOR, applyStartUrl, APPLY_START_URL_TOOL_DESCRIPTOR } from "./tools/leadCapture.js";
 import { visitorIdentify, VISITOR_IDENTIFY_TOOL_DESCRIPTOR } from "./tools/visitorIdentify.js";
@@ -25,7 +24,6 @@ import { bookCallback, BOOK_CALLBACK_TOOL_DESCRIPTOR } from "./tools/bookCallbac
 import { applicationUnderwritingSummary, APPLICATION_UNDERWRITING_SUMMARY_TOOL_DESCRIPTOR } from "./tools/applicationUnderwritingSummary.js";
 import { lenderMatchExplain, LENDER_MATCH_EXPLAIN_TOOL_DESCRIPTOR } from "./tools/lenderMatchExplain.js";
 import { catalogSummary, CATALOG_SUMMARY_TOOL_DESCRIPTOR } from "./tools/catalogTools.js";
-import { pgiReadiness, PGI_READINESS_TOOL_DESCRIPTOR } from "./tools/pgiReadiness.js";
 import {
   capitalReadinessCheck, CAPITAL_READINESS_CHECK_TOOL_DESCRIPTOR,
   prequalEstimate, PREQUAL_ESTIMATE_TOOL_DESCRIPTOR,
@@ -106,7 +104,6 @@ export const TOOL_REGISTRY: Readonly<Record<string, ToolEntry>> = {
   "pipeline.query":         { descriptor: PIPELINE_QUERY_TOOL_DESCRIPTOR,         run: (a) => pipelineQuery(a) },
   "application.my_status":  { descriptor: APPLICATION_STATUS_TOOL_DESCRIPTOR,     run: (a) => applicationStatus(a) },
   "docs.checklist":         { descriptor: DOCS_CHECKLIST_TOOL_DESCRIPTOR,         run: (a) => docsChecklist(a) },
-  "pgi.completion_link":    { descriptor: PGI_COMPLETION_LINK_TOOL_DESCRIPTOR,    run: (a) => pgiCompletionLink(a) },
   "info.products":          { descriptor: INFO_PRODUCTS_TOOL_DESCRIPTOR,          run: (a) => infoProducts(a) },
   "info.qualifications":    { descriptor: INFO_QUALIFICATIONS_TOOL_DESCRIPTOR,    run: (a) => infoQualifications(a) },
   "lead.capture":           { descriptor: LEAD_CAPTURE_TOOL_DESCRIPTOR,           run: (a) => leadCapture(a) },
@@ -116,7 +113,7 @@ export const TOOL_REGISTRY: Readonly<Record<string, ToolEntry>> = {
   "contact.find":            { descriptor: CONTACT_FIND_TOOL_DESCRIPTOR,          run: (a) => contactFind(a) },
   "application.summary":     { descriptor: APPLICATION_SUMMARY_TOOL_DESCRIPTOR,   run: (a) => applicationSummary(a) },
   "comm.draft_email":        { descriptor: COMM_DRAFT_EMAIL_TOOL_DESCRIPTOR,      run: (a) => commDraftEmail(a) },
-  "maya.audit":              { descriptor: MAYA_AUDIT_TOOL_DESCRIPTOR,            run: (a) => mayaAudit(a) },
+  "assistant.audit":         { descriptor: MAYA_AUDIT_TOOL_DESCRIPTOR,            run: (a) => mayaAudit(a) },
   "application.open_newest": { descriptor: APPLICATION_OPEN_NEWEST_TOOL_DESCRIPTOR, run: (a) => applicationOpenNewest(a) },
   "ui.navigate":             { descriptor: UI_NAVIGATE_TOOL_DESCRIPTOR,           run: (a) => uiNavigate(a) },
   "comm.send_sms":           { descriptor: COMM_SEND_SMS_TOOL_DESCRIPTOR,         run: (a) => commSendSms(a) },
@@ -124,7 +121,6 @@ export const TOOL_REGISTRY: Readonly<Record<string, ToolEntry>> = {
   "book.callback":           { descriptor: BOOK_CALLBACK_TOOL_DESCRIPTOR,         run: (a) => bookCallback(a) },
   "application.underwriting_summary": { descriptor: APPLICATION_UNDERWRITING_SUMMARY_TOOL_DESCRIPTOR, run: (a) => applicationUnderwritingSummary(a) },
   "lender.match_explain": { descriptor: LENDER_MATCH_EXPLAIN_TOOL_DESCRIPTOR, run: (a) => lenderMatchExplain(a) },
-  "pgi.readiness": { descriptor: PGI_READINESS_TOOL_DESCRIPTOR, run: (a) => pgiReadiness(a) },
   "apply.field_help": { descriptor: APPLY_FIELD_HELP_TOOL_DESCRIPTOR, run: (a) => applyFieldHelp(a) },
   "docs.explain": { descriptor: DOCS_EXPLAIN_TOOL_DESCRIPTOR, run: (a) => docsExplain(a) },
   "docs.rejections": { descriptor: DOCS_REJECTIONS_TOOL_DESCRIPTOR, run: (a) => docsRejections(a) },

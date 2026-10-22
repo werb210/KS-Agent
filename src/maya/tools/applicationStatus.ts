@@ -1,9 +1,7 @@
 // AGENT_BLOCK_v3_CLIENT_TOOLS_v1
-// Client-audience tool. Reports the applicant's BF application
-// status, stage, document progress, and (if a PGI handoff was
-// performed by BF-Server v213) whether a BI completion flow is
-// available. Backed by GET /api/applications/:id (extended in
-// BF-Server v216 to surface bi_* columns).
+// Client-audience tool. Reports the applicant's loan application
+// status, stage and document progress.
+// KS_AGENT_v1 - lending only: the insurance (PGI) hand-off fields are gone.
 import { fetchApplicationStatus } from "../../integrations/bfServerClient.js";
 
 export type ApplicationStatusArgs = {
@@ -19,11 +17,6 @@ export type ApplicationStatusResult = {
   requested_amount?: number | null;
   documents_total?: number;
   documents_complete?: number;
-  pgi_handoff?: {
-    available: boolean;
-    completion_url?: string | null;
-    bi_public_id?: string | null;
-  };
   summary?: string;
   note?: string; // MAYA_v817
 };
@@ -65,14 +58,9 @@ export async function applicationStatus(args: ApplicationStatusArgs): Promise<Ap
       return { ok: false, summary: "Application not found." };
     }
     const docs = countDocs(r.documents);
-    const completionUrl = s(r.bi_completion_url);
-    const biPublicId = s(r.bi_public_id);
-    const pgiAvailable = !!completionUrl;
     const stage = s(r.pipeline_state) ?? s(r.current_stage);
     const reqAmount = num(r.requested_amount);
-    const summary = pgiAvailable
-      ? `You're at "${stage ?? "in progress"}". Documents: ${docs.complete}/${docs.total}. Your PGI application is ready — complete it at the link to add the remaining underwriting details.`
-      : `You're at "${stage ?? "in progress"}". Documents: ${docs.complete}/${docs.total}.`;
+    const summary = `You're at "${stage ?? "in progress"}". Documents: ${docs.complete}/${docs.total}.`;
     // MAYA_v817 - this payload has no forms and the raw stage name; the portal's list and label come from application.checklist.
     const note = "Documents only, and the internal stage name. For what is left to do (forms and documents), the counts and the stage label the client sees, use application.checklist.";
     return {
@@ -84,11 +72,6 @@ export async function applicationStatus(args: ApplicationStatusArgs): Promise<Ap
       requested_amount: reqAmount,
       documents_total: docs.total,
       documents_complete: docs.complete,
-      pgi_handoff: {
-        available: pgiAvailable,
-        completion_url: completionUrl,
-        bi_public_id: biPublicId,
-      },
       summary,
       note,
     };
@@ -102,7 +85,7 @@ export const APPLICATION_STATUS_TOOL_DESCRIPTOR = {
   function: {
     name: "application.my_status",
     description:
-      "Look up the status of the authenticated applicant's BF loan application. Returns the current stage, document progress, requested amount, and whether a PGI (insurance) completion flow is available. Use this when the applicant asks 'what's the status', 'where am I in the process', 'how much longer', or anything about their application progress.",
+      "Look up the status of the authenticated applicant's loan application. Returns the current stage, document progress and requested amount. Use this when the applicant asks 'what's the status', 'where am I in the process', 'how much longer', or anything about their application progress.",
     parameters: {
       type: "object",
       properties: {
