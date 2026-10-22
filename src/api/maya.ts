@@ -91,12 +91,6 @@ async function postToBFServer(path: string, payload: unknown) {
   return res.json().catch(() => null);
 }
 
-async function getFromBFServer(path: string) {
-  const res = await bfServer(path, { method: "GET" });
-  if (!res.ok) throw new Error(`BF-Server request failed: ${res.status}`);
-  return res.json().catch(() => null);
-}
-
 function safeHandler(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
     handler(req, res).catch(next);

@@ -94,6 +94,7 @@ function checkTwilio(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- Express request augmentation must use its namespace
   namespace Express {
     interface Request {
       requestId: string;

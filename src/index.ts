@@ -49,10 +49,13 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv = process.env): voi
     return;
   }
 
-  if (!env.AGENT_API_TOKEN || env.AGENT_API_TOKEN === "test_token") {
+  // KS_AGENT_v1_CONFIG - service tokens are minted from JWT_SECRET; AGENT_API_TOKEN is only a fallback for when
+  // there is no secret, so it is warned about only then.
+  const hasSecret = Boolean(env.AGENT_SERVICE_JWT_SECRET || env.JWT_SECRET);
+  if (!hasSecret && (!env.AGENT_API_TOKEN || env.AGENT_API_TOKEN === "test_token")) {
     console.warn(
-      "[WARN] AGENT_API_TOKEN is not set or is test_token. " +
-        "Set this in Azure App Service → Configuration. " +
+      "[WARN] AGENT_API_TOKEN is not set or is test_token, and there is no JWT_SECRET to mint service tokens with. " +
+        "Set JWT_SECRET in Azure App Service → Configuration. " +
         "The assistant will start in degraded mode.",
     );
   }

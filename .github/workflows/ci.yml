@@ -14,6 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # KS_AGENT_v1_CI - Node 22, the version in package.json "engines", .nvmrc, the Dockerfile and KS-server's CI.
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -30,15 +31,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
+      # KS_AGENT_v1_BRANDING - replies, prompts and tool descriptions name the licensee, never the previous owner.
+      - name: No previous-owner branding in src string literals
+        run: npm run check:brand
+
+      # AGENT_v789_SOURCE_GREP - no new tests that assert on source text.
+      - name: Source-grep test guard
+        run: npm run check:source-grep
+
       - name: Build
         run: npm run build
 
       - name: Run tests
-        run: npm run test
-
-      # AGENT_v789_SOURCE_GREP - no new tests that assert on source text.
-      - name: Source-grep test guard
-        run: node scripts/check-source-grep-tests.mjs
+        run: npm test
 
       - name: Verify artifact
         run: |
