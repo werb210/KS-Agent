@@ -1,0 +1,94 @@
+import { startServer } from "./server.js";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+async function validate(port: number): Promise<boolean> {
+  const [health, ready] = await Promise.all([
+    fetch(`http://127.0.0.1:${port}/health`),
+    fetch(`http://127.0.0.1:${port}/ready`),
+  ]);
+
+  return health.ok && ready.ok;
+}
+
+async function run() {
+  // AGENT_BLOCK_v81_BUILD_FINGERPRINT
+  const BUILD_TAG = process.env.BUILD_TAG || "v81-local";
+  const COMMIT_SHA = (process.env.COMMIT_SHA || "unknown").slice(0, 8);
+  console.log(`agent process start build=${BUILD_TAG} sha=${COMMIT_SHA} at=${new Date().toISOString()}`);
+  if (process.env.NODE_ENV === "production" && !fs.existsSync("./dist/index.js")) {
+    throw new Error("DIST_MISSING");
+  }
+
+  validateProductionEnv(process.env);
+
+  const started = await startServer();
+  const ciValidate = process.env.CI_VALIDATE === "true";
+
+  if (!ciValidate) {
+    return;
+  }
+
+  try {
+    const port = started.envStatus.values.port;
+    const passed = await validate(port);
+
+    if (!passed) {
+      throw new Error("CI validation failed");
+    }
+
+    console.log("CI_VALIDATE_COMPLETE");
+    process.exitCode = 0;
+  } finally {
+    await started.shutdown();
+  }
+}
+
+export function validateProductionEnv(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+
+  // KS_AGENT_v1_CONFIG - service tokens are minted from JWT_SECRET; AGENT_API_TOKEN is only a fallback for when
+  // there is no secret, so it is warned about only then.
+  const hasSecret = Boolean(env.AGENT_SERVICE_JWT_SECRET || env.JWT_SECRET);
+  if (!hasSecret && (!env.AGENT_API_TOKEN || env.AGENT_API_TOKEN === "test_token")) {
+    console.warn(
+      "[WARN] AGENT_API_TOKEN is not set or is test_token, and there is no JWT_SECRET to mint service tokens with. " +
+        "Set JWT_SECRET in Azure App Service → Configuration. " +
+        "The assistant will start in degraded mode.",
+    );
+  }
+
+  if (!env.JWT_SECRET || env.JWT_SECRET === "test_secret") {
+    console.warn("[WARN] JWT_SECRET must be set in production (the same value as the licensee's server). The assistant will start in degraded mode.");
+  }
+
+  if (!env.SERVER_URL) {
+    console.warn(
+      "[WARN] SERVER_URL not set — the assistant cannot load the licensee's name or reach its data. Set it to the licensee's server address (https://...).",
+    );
+  }
+
+  // AGENT_v789_ENV - AGENT_SHARED_SECRET is not used by anything; service tokens are signed
+  // with AGENT_SERVICE_JWT_SECRET (or JWT_SECRET), so it is not warned about.
+}
+
+const isMainEntry = (() => {
+  if (!process.argv[1]) {
+    return false;
+  }
+
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (isMainEntry) {
+  run().catch((error) => {
+    console.error("Failed to start service", error);
+    process.exitCode = 1;
+  });
+}

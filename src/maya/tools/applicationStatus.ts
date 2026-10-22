@@ -1,0 +1,97 @@
+// AGENT_BLOCK_v3_CLIENT_TOOLS_v1
+// Client-audience tool. Reports the applicant's loan application
+// status, stage and document progress.
+// KS_AGENT_v1 - lending only: the insurance (PGI) hand-off fields are gone.
+import { fetchApplicationStatus } from "../../integrations/bfServerClient.js";
+
+export type ApplicationStatusArgs = {
+  application_id: string;
+};
+
+export type ApplicationStatusResult = {
+  ok: boolean;
+  application_id?: string;
+  name?: string | null;
+  pipeline_state?: string | null;
+  status?: string | null;
+  requested_amount?: number | null;
+  documents_total?: number;
+  documents_complete?: number;
+  summary?: string;
+  note?: string; // MAYA_v817
+};
+
+function s(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length ? t : null;
+}
+
+function num(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return null;
+}
+
+function countDocs(docs: unknown): { total: number; complete: number } {
+  if (!Array.isArray(docs)) return { total: 0, complete: 0 };
+  let total = 0;
+  let complete = 0;
+  for (const d of docs) {
+    if (!d || typeof d !== "object") continue;
+    total += 1;
+    const status = String((d as any).status ?? "").toLowerCase();
+    if (status === "accepted" || status === "uploaded" || status === "complete") {
+      complete += 1;
+    }
+  }
+  return { total, complete };
+}
+
+export async function applicationStatus(args: ApplicationStatusArgs): Promise<ApplicationStatusResult> {
+  const applicationId = s(args?.application_id);
+  if (!applicationId) {
+    return { ok: false, summary: "application_id is required." };
+  }
+  try {
+    const r: any = await fetchApplicationStatus(applicationId);
+    if (!r || typeof r !== "object") {
+      return { ok: false, summary: "Application not found." };
+    }
+    const docs = countDocs(r.documents);
+    const stage = s(r.pipeline_state) ?? s(r.current_stage);
+    const reqAmount = num(r.requested_amount);
+    const summary = `You're at "${stage ?? "in progress"}". Documents: ${docs.complete}/${docs.total}.`;
+    // MAYA_v817 - this payload has no forms and the raw stage name; the portal's list and label come from application.checklist.
+    const note = "Documents only, and the internal stage name. For what is left to do (forms and documents), the counts and the stage label the client sees, use application.checklist.";
+    return {
+      ok: true,
+      application_id: applicationId,
+      name: s(r.name),
+      pipeline_state: stage,
+      status: s(r.status),
+      requested_amount: reqAmount,
+      documents_total: docs.total,
+      documents_complete: docs.complete,
+      summary,
+      note,
+    };
+  } catch (e: any) {
+    return { ok: false, summary: `application_status_failed: ${e?.message ?? "unknown"}` };
+  }
+}
+
+export const APPLICATION_STATUS_TOOL_DESCRIPTOR = {
+  type: "function" as const,
+  function: {
+    name: "application.my_status",
+    description:
+      "Look up the status of the authenticated applicant's loan application. Returns the current stage, document progress and requested amount. Use this when the applicant asks 'what's the status', 'where am I in the process', 'how much longer', or anything about their application progress.",
+    parameters: {
+      type: "object",
+      properties: {
+        // AGENT_v789_IDENTITY - application_id is injected from the verified session, never asked of the model.
+      },
+      required: [],
+    },
+  },
+};
