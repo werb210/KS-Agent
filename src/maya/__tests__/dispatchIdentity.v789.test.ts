@@ -19,7 +19,7 @@ afterEach(() => { globalThis.fetch = realFetch; });
 
 const client = (over: Partial<DispatchContext> = {}): DispatchContext => ({ audience: "client", phone: "+15875550100", subject: "+15875550100", sessionId: "s-client", applicationId: "req-app-1", ...over });
 const visitor = (over: Partial<DispatchContext> = {}): DispatchContext => ({ audience: "visitor", subject: "v-1", sessionId: "s-visitor", ...over });
-const staff = (over: Partial<DispatchContext> = {}): DispatchContext => ({ audience: "staff", subject: "u-7", staffId: "u-7", staffEmail: "todd@boreal.financial", staffRole: "Staff", silo: "BF", sessionId: "s-staff", ...over });
+const staff = (over: Partial<DispatchContext> = {}): DispatchContext => ({ audience: "staff", subject: "u-7", staffId: "u-7", staffEmail: "sam@acme.example", staffRole: "Staff", silo: "BF", sessionId: "s-staff", ...over });
 const bodyOf = (path: string) => calls.filter((c) => c.path === path).at(-1)?.body;
 const MODEL_IDS = { application_id: "someone-elses-app", applicationId: "x", contact_id: "someone-elses-contact", phone: "+19999999999", session_id: "s-other" };
 
@@ -27,7 +27,7 @@ describe("[154] client and public audiences never take ids or a phone from the m
   it("client app tools use only the request's application id and the verified phone", async () => {
     // MAYA_v817 - application.checklist and next_step read the portal's to-do list (/api/maya/client-checklist) with the verified phone.
     const TODO_LIST = new Set(["application.checklist", "application.next_step"]);
-    for (const tool of ["application.checklist", "application.my_status", "docs.checklist", "docs.rejections", "offer.explain", "application.next_step", "signature.status", "application.resume_link", "pgi.completion_link"]) {
+    for (const tool of ["application.checklist", "application.my_status", "docs.checklist", "docs.rejections", "offer.explain", "application.next_step", "signature.status", "application.resume_link"]) {
       calls.length = 0;
       await dispatchTool(tool, MODEL_IDS, client());
       const sent = JSON.stringify(calls);
@@ -118,28 +118,29 @@ describe("[161] handoffs: identity from the verified context only, one per sessi
   });
 });
 
-describe("[163] every staff tool gets silo and role from the verified context", () => {
+// KS_AGENT_v1 - lending only: the silo is always the lending one ("BF"), whatever the context or the model says.
+describe("[163] every staff tool gets the lending silo and the verified role", () => {
   const ARGS: Record<string, Record<string, unknown>> = {
     "contact.find": { query: "Dana" }, "notes.read": { contact_id: "c1" }, "crm.add_note": { contact_id: "c1", body: "hi" },
     "crm.notes": { contact_id: "c1" }, "crm.tasks": { contact_id: "c1" }, "crm.create_task": { contact_id: "c1", title: "t" },
     "contact.timeline": { contact_id: "c1" }, "contact.picture": { contact_id: "c1" }, "application.summary": { application_id: "a1" },
     "application.risk_flags": { application_id: "a1" }, "banking.summary": { application_id: "a1" }, "credit.summary": { application_id: "a1" },
     "docs.request_draft": { application_id: "a1" }, "application.underwriting_summary": { application_id: "a1" }, "lender.match_explain": { application_id: "a1" },
-    "pgi.readiness": { application_id: "a1" }, "todo.status": { application_id: "a1" }, "comm.draft_email": { to: "a@b.co", subject: "s", body: "b" },
+    "todo.status": { application_id: "a1" }, "comm.draft_email": { to: "a@b.co", subject: "s", body: "b" },
     "comm.send_sms": { contact_id: "c1", body: "hi" }, "call.initiate": { contact_id: "c1" }, "pipeline.query": { question: "oldest active application" },
     "marketing.send_campaign": { channel: "email", subject: "s", html: "<p>x</p>" }, "ads.negatives.add": { campaign: "111", terms: ["student loan"] },
     "ads.negatives.remove": { id: "neg_1" },
   };
   const staffTools = TOOLS_BY_AUDIENCE.staff.filter((t) => t !== "pending.confirm" && t !== "ui.navigate");
 
-  it("model-supplied silo and role are ignored for all of them", async () => {
+  it("model- and context-supplied silos and the model's role are ignored for all of them", async () => {
     for (const tool of staffTools) {
       calls.length = 0;
       await dispatchTool(tool, { silo: "SLF", role: "Admin", ...(ARGS[tool] ?? {}) }, staff({ silo: "BI", staffRole: "Staff" }));
       const posts = calls.filter((c) => c.path.startsWith("/api/maya/") && c.method === "POST");
       expect(posts.length, tool).toBeGreaterThan(0);
       for (const c of posts) {
-        expect(c.body.silo, `${tool} ${c.path}`).toBe("BI");
+        expect(c.body.silo, `${tool} ${c.path}`).toBe("BF");
         expect(c.body.role, `${tool} ${c.path}`).toBe("Staff");
       }
     }
@@ -152,7 +153,7 @@ describe("[163] every staff tool gets silo and role from the verified context", 
 
   it("the per-staff fields are the verified staff member's", async () => {
     await dispatchTool("comms.overview", { user_email: "someone@else.com" }, staff());
-    expect(bodyOf("/api/maya/staff/comms-overview").user_email).toBe("todd@boreal.financial");
+    expect(bodyOf("/api/maya/staff/comms-overview").user_email).toBe("sam@acme.example");
     await dispatchTool("comm.send_sms", { contact_id: "c1", body: "hi", staff_user_id: "evil", approved: true }, staff());
     expect(bodyOf("/api/maya/staff/send-sms").staff_user_id).toBe("u-7");
     expect("approved" in bodyOf("/api/maya/staff/send-sms")).toBe(false);

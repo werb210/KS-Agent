@@ -51,7 +51,8 @@ describe("AGENT_HOTFIX_v5a — audience", () => {
     expect(TOOLS_BY_AUDIENCE.visitor).toContain("info.products");
     expect(TOOLS_BY_AUDIENCE.visitor).toContain("apply.start_url");
     expect(TOOLS_BY_AUDIENCE.client).toContain("application.my_status");
-    expect(TOOLS_BY_AUDIENCE.client).toContain("pgi.completion_link");
+    // KS_AGENT_v1 - lending only: no insurance tools for anyone.
+    for (const x of a) expect(TOOLS_BY_AUDIENCE[x].some((t) => t.startsWith("pgi."))).toBe(false);
     expect(TOOLS_BY_AUDIENCE.staff).toContain("pipeline.query");
   });
 

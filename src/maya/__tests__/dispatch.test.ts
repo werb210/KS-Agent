@@ -6,7 +6,7 @@ vi.mock("../audience.js", () => ({
   isToolAllowed: (audience: string, tool: string) => {
     const allow: Record<string, string[]> = {
       visitor: ["info.products", "info.qualifications", "lead.capture", "apply.start_url"],
-      client: ["application.my_status", "docs.checklist", "pgi.completion_link"],
+      client: ["application.my_status", "docs.checklist"],
       staff: ["pipeline.query"],
     };
     return (allow[audience] ?? []).includes(tool);
@@ -31,10 +31,6 @@ vi.mock("../tools/docsChecklist.js", () => ({
   docsChecklist: vi.fn(async () => ({ ok: true })),
   DOCS_CHECKLIST_TOOL_DESCRIPTOR: { type: "function", function: { name: "docs.checklist", description: "", parameters: {} } },
 }));
-vi.mock("../tools/pgiCompletionLink.js", () => ({
-  pgiCompletionLink: vi.fn(async () => ({ ok: true })),
-  PGI_COMPLETION_LINK_TOOL_DESCRIPTOR: { type: "function", function: { name: "pgi.completion_link", description: "", parameters: {} } },
-}));
 vi.mock("../tools/info.js", () => ({
   infoProducts: vi.fn(async () => ({ ok: true })),
   INFO_PRODUCTS_TOOL_DESCRIPTOR: { type: "function", function: { name: "info.products", description: "", parameters: {} } },
@@ -44,7 +40,7 @@ vi.mock("../tools/info.js", () => ({
 vi.mock("../tools/leadCapture.js", () => ({
   leadCapture: (a: unknown) => leadCaptureMock(a),
   LEAD_CAPTURE_TOOL_DESCRIPTOR: { type: "function", function: { name: "lead.capture", description: "", parameters: {} } },
-  applyStartUrl: vi.fn(async () => ({ ok: true, url: "https://client.boreal.financial/" })),
+  applyStartUrl: vi.fn(async () => ({ ok: true, url: "https://client.acme.example/" })),
   APPLY_START_URL_TOOL_DESCRIPTOR: { type: "function", function: { name: "apply.start_url", description: "", parameters: {} } },
 }));
 

@@ -10,6 +10,7 @@ import { _clearHandoffState } from "../handoff.js";
 import { _clearAllPendingActions } from "../pendingActions.js";
 import { createBfServerFake, type FakeCall } from "../../../test/bfServerFake.js";
 import { APPLICATION_SUMMARY, BF_SERVER_FIXTURES, REAL_BF_SERVER_PATHS, APP_ID } from "../../../test/fixtures/bfServer.v789.js";
+import { setLicensee } from "../../licensee/brand.js";
 
 const realFetch = globalThis.fetch;
 let calls: FakeCall[] = [];
@@ -18,13 +19,16 @@ function useFake(overrides: Record<string, unknown> = {}) {
   calls = fake.calls;
   globalThis.fetch = fake.fetch;
 }
-beforeEach(() => { process.env.JWT_SECRET = "contract-secret"; _clearHandoffState(); _clearAllPendingActions(); useFake(); });
-afterEach(() => { globalThis.fetch = realFetch; });
+beforeEach(() => {
+  process.env.JWT_SECRET = "contract-secret"; _clearHandoffState(); _clearAllPendingActions(); useFake();
+  setLicensee({ company_name: "Acme Capital", assistant_name: "Ava", support_email: "", support_phone: "", mailing_address: "", urls: { server: "", portal: "", client: "https://client.acme.example", website: "" } });
+});
+afterEach(() => { globalThis.fetch = realFetch; setLicensee(null); });
 
 const CTX: Record<MayaAudience, DispatchContext> = {
   visitor: { audience: "visitor", subject: "v-1", sessionId: "s-v", requestId: "r1" },
   client: { audience: "client", phone: "+17805550111", subject: "+17805550111", sessionId: "s-c", applicationId: APP_ID, requestId: "r1" },
-  staff: { audience: "staff", subject: "u-7", staffId: "u-7", staffEmail: "todd@boreal.financial", staffRole: "Admin", silo: "BF", sessionId: "s-s", requestId: "r1", latestUserMessage: "go" },
+  staff: { audience: "staff", subject: "u-7", staffId: "u-7", staffEmail: "sam@acme.example", staffRole: "Admin", silo: "BF", sessionId: "s-s", requestId: "r1", latestUserMessage: "go" },
 };
 const ARGS: Record<string, Record<string, unknown>> = {
   "visitor.identify": { name: "Dana Lee", email: "dana@northwind.example" }, "lead.capture": { email: "dana@northwind.example" },
@@ -34,7 +38,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   "contact.timeline": { contact_id: "c1" }, "contact.picture": { contact_id: "c1" }, "application.summary": { application_id: APP_ID },
   "application.risk_flags": { application_id: APP_ID }, "banking.summary": { application_id: APP_ID }, "credit.summary": { application_id: APP_ID },
   "docs.request_draft": { application_id: APP_ID }, "application.underwriting_summary": { application_id: APP_ID }, "lender.match_explain": { application_id: APP_ID },
-  "pgi.readiness": { application_id: APP_ID }, "todo.status": { application_id: APP_ID }, "comm.draft_email": { to: "dana@northwind.example", subject: "s", body: "b" },
+  "todo.status": { application_id: APP_ID }, "comm.draft_email": { to: "dana@northwind.example", subject: "s", body: "b" },
   "comm.send_sms": { contact_id: "c1", body: "hi" }, "call.initiate": { contact_id: "c1" }, "pipeline.query": { question: "oldest active application" },
   "marketing.send_campaign": { channel: "email", tag: "past-clients", subject: "s", html: "<p>x</p>" }, "ads.negatives.add": { campaign: "111", terms: ["student loan"] },
   "ads.negatives.remove": { id: "neg_1" }, "ui.navigate": { target: "pipeline" }, "apply.field_help": { field: "annual revenue" },
@@ -43,7 +47,8 @@ const ARGS: Record<string, Record<string, unknown>> = {
 };
 // Tools whose answer is built in the agent (no BF-Server call).
 // MAYA_v817 - forms.field_help answers from the agent (no BF-Server call).
-const LOCAL_TOOLS = new Set(["forms.field_help", "info.products", "info.qualifications", "apply.start_url", "info.lenders", "capital.readiness_check", "prequal.estimate", "industry.guidance", "apply.doc_preview", "apply.field_help", "docs.explain", "ui.navigate"]);
+// KS_AGENT_v1_LICENSEE - info.products now reads the licensee's catalog (/api/maya/catalog-summary).
+const LOCAL_TOOLS = new Set(["forms.field_help", "info.qualifications", "apply.start_url", "info.lenders", "capital.readiness_check", "prequal.estimate", "industry.guidance", "apply.doc_preview", "apply.field_help", "docs.explain", "ui.navigate"]);
 
 const audienceOf = (tool: string): MayaAudience => (["client", "staff", "visitor"] as const).find((a) => TOOLS_BY_AUDIENCE[a].includes(tool))!;
 
@@ -70,6 +75,8 @@ describe("contract: every live tool against the BF-Server fixtures", () => {
 
   it("the fixture list has no paths under /v1/ and lender products use interestMin/interestMax", () => {
     for (const p of REAL_BF_SERVER_PATHS) expect(p).toMatch(/^\/api\/(?!v1\/)/);
+    // KS_AGENT_v1 - the licensee's server has no insurance (PGI) or SLF routes.
+    for (const p of REAL_BF_SERVER_PATHS) expect(p).not.toMatch(/pgi|\/bi\/|slf/i);
     const lp = BF_SERVER_FIXTURES["/api/maya/staff/lender-products"] as { ranges: Array<Record<string, unknown>> };
     expect(Object.keys(lp.ranges[0])).toEqual(expect.arrayContaining(["interestMin", "interestMax"]));
   });

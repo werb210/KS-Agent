@@ -53,8 +53,8 @@ function get(path: string): Promise<number> {
 const ctxToken = (claims: Record<string, unknown>, secret = SECRET) =>
   jwt.sign({ kind: "maya_context", ...claims }, secret, { algorithm: "HS256", expiresIn: "5m" });
 const toolNames = () => ((openaiBodies[0]?.tools ?? []) as any[]).map((t) => t.function.name as string);
-const ORIGIN = { Origin: "https://boreal.financial" };
-const STAFF = { id: "u-1", name: "Todd", email: "todd@example.com", role: "Admin" };
+const ORIGIN = { Origin: "https://www.acme-capital.example" };
+const STAFF = { id: "u-1", name: "Sam", email: "sam@example.com", role: "Admin" };
 
 describe("Maya identity (v784)", () => {
   it("a header-only staff claim gets public tools only", async () => {

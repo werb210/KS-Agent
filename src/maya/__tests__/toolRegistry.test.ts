@@ -5,8 +5,8 @@ vi.mock("../audience.js", () => ({
   isToolAllowed: (audience: string, tool: string) => {
     const allow: Record<string, string[]> = {
       visitor: ["application.find_mine", "apply.doc_preview", "catalog.summary", "apply.start_url", "book.callback", "capital.readiness_check", "escalate.to_human", "industry.guidance", "info.lenders", "info.products", "info.qualifications", "lead.capture", "prequal.estimate", "visitor.identify", "waitlist.join"],
-      client: ["application.find_mine", "application.my_status", "catalog.summary", "application.next_step", "application.resume_link", "application.timeline_estimate", "apply.field_help", "book.callback", "docs.checklist", "docs.explain", "docs.rejections", "escalate.to_human", "offer.explain", "pgi.completion_link", "signature.status"],
-      staff: ["pipeline.query", "contact.find", "catalog.summary", "application.summary", "comm.draft_email", "comm.send_sms", "call.initiate", "maya.audit", "application.open_newest", "ui.navigate", "application.underwriting_summary", "lender.match_explain", "pgi.readiness", "lender.products", "contact.timeline", "call.triage", "application.risk_flags", "banking.summary", "credit.summary", "notes.read", "docs.request_draft", "daily.briefing", "crm.notes", "crm.add_note", "crm.tasks", "crm.create_task", "marketing.overview", "marketing.send_campaign"],
+      client: ["application.find_mine", "application.my_status", "catalog.summary", "application.next_step", "application.resume_link", "application.timeline_estimate", "apply.field_help", "book.callback", "docs.checklist", "docs.explain", "docs.rejections", "escalate.to_human", "offer.explain", "signature.status"],
+      staff: ["pipeline.query", "contact.find", "catalog.summary", "application.summary", "comm.draft_email", "comm.send_sms", "call.initiate", "assistant.audit", "application.open_newest", "ui.navigate", "application.underwriting_summary", "lender.match_explain", "lender.products", "contact.timeline", "call.triage", "application.risk_flags", "banking.summary", "credit.summary", "notes.read", "docs.request_draft", "daily.briefing", "crm.notes", "crm.add_note", "crm.tasks", "crm.create_task", "marketing.overview", "marketing.send_campaign"],
     };
     return (allow[audience] ?? []).includes(tool);
   },
@@ -25,10 +25,6 @@ vi.mock("../tools/applicationStatus.js", () => ({
 vi.mock("../tools/docsChecklist.js", () => ({
   docsChecklist: vi.fn(),
   DOCS_CHECKLIST_TOOL_DESCRIPTOR: { type: "function", function: { name: "docs.checklist", description: "", parameters: {} } },
-}));
-vi.mock("../tools/pgiCompletionLink.js", () => ({
-  pgiCompletionLink: vi.fn(),
-  PGI_COMPLETION_LINK_TOOL_DESCRIPTOR: { type: "function", function: { name: "pgi.completion_link", description: "", parameters: {} } },
 }));
 vi.mock("../tools/info.js", () => ({
   infoProducts: vi.fn(),
@@ -66,7 +62,7 @@ vi.mock("../tools/commDraftEmail.js", () => ({
 
 vi.mock("../tools/mayaAudit.js", () => ({
   mayaAudit: vi.fn(),
-  MAYA_AUDIT_TOOL_DESCRIPTOR: { type: "function", function: { name: "maya.audit", description: "", parameters: {} } },
+  MAYA_AUDIT_TOOL_DESCRIPTOR: { type: "function", function: { name: "assistant.audit", description: "", parameters: {} } },
 }));
 vi.mock("../tools/uiNavigate.js", () => ({
   uiNavigate: vi.fn(),
@@ -95,10 +91,6 @@ vi.mock("../tools/applicationUnderwritingSummary.js", () => ({
 vi.mock("../tools/lenderMatchExplain.js", () => ({
   lenderMatchExplain: vi.fn(),
   LENDER_MATCH_EXPLAIN_TOOL_DESCRIPTOR: { type: "function", function: { name: "lender.match_explain", description: "", parameters: {} } },
-}));
-vi.mock("../tools/pgiReadiness.js", () => ({
-  pgiReadiness: vi.fn(),
-  PGI_READINESS_TOOL_DESCRIPTOR: { type: "function", function: { name: "pgi.readiness", description: "", parameters: {} } },
 }));
 vi.mock("../tools/catalogTools.js", () => ({
   catalogSummary: vi.fn(),
@@ -207,6 +199,7 @@ describe("AGENT_BLOCK_v5 - toolRegistry", () => {
       "apply.doc_preview",
       "apply.field_help",
       "apply.start_url",
+      "assistant.audit",
       "automations.overview",
       "banking.summary",
       "book.callback",
@@ -241,12 +234,9 @@ describe("AGENT_BLOCK_v5 - toolRegistry", () => {
       "lender.products",
       "marketing.overview",
       "marketing.send_campaign",
-      "maya.audit",
       "notes.read",
       "offer.explain",
       "pending.confirm",
-      "pgi.completion_link",
-      "pgi.readiness",
       "pipeline.facts",
       "pipeline.query",
       "prequal.estimate",
@@ -296,7 +286,6 @@ describe("AGENT_BLOCK_v5 - toolRegistry", () => {
       "docs.rejections",
       "escalate.to_human",
       "offer.explain",
-      "pgi.completion_link",
       "signature.status",
     ]);
   });
@@ -308,6 +297,7 @@ describe("AGENT_BLOCK_v5 - toolRegistry", () => {
       "application.risk_flags",
       "application.summary",
       "application.underwriting_summary",
+      "assistant.audit",
       "banking.summary",
       "call.initiate",
       "call.triage",
@@ -327,9 +317,7 @@ describe("AGENT_BLOCK_v5 - toolRegistry", () => {
       "lender.products",
       "marketing.overview",
       "marketing.send_campaign",
-      "maya.audit",
       "notes.read",
-      "pgi.readiness",
       "pipeline.query",
       "ui.navigate",
     ]);

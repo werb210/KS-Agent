@@ -14,15 +14,11 @@ import {
   docsChecklist,
   DOCS_CHECKLIST_TOOL_DESCRIPTOR,
 } from "../tools/docsChecklist.js";
-import {
-  pgiCompletionLink,
-  PGI_COMPLETION_LINK_TOOL_DESCRIPTOR,
-} from "../tools/pgiCompletionLink.js";
 
 describe("AGENT_BLOCK_v3 — application.my_status", () => {
   beforeEach(() => fetchMock.mockReset());
 
-  it("returns stage + doc progress + PGI handoff when set", async () => {
+  it("returns stage + doc progress, and no insurance hand-off (KS_AGENT_v1 lending only)", async () => {
     fetchMock.mockResolvedValueOnce({
       id: "bf-app-1",
       name: "Acme LLC",
@@ -33,31 +29,15 @@ describe("AGENT_BLOCK_v3 — application.my_status", () => {
         { document_category: "bank_statement", status: "accepted" },
         { document_category: "tax_return", status: "pending" },
       ],
-      bi_application_id: "BI-ABC123",
-      bi_public_id: "pub-xyz",
-      bi_completion_url: "https://www.boreal.insure/login?next=/applications/pub-xyz",
+      bi_completion_url: "https://insurance.example/should-be-ignored",
     });
     const r = await applicationStatus({ application_id: "bf-app-1" });
     expect(r.ok).toBe(true);
     expect(r.pipeline_state).toBe("Documents Required");
     expect(r.documents_total).toBe(2);
     expect(r.documents_complete).toBe(1);
-    expect(r.pgi_handoff?.available).toBe(true);
-    expect(r.pgi_handoff?.completion_url).toMatch(/^https:\/\/www\.boreal\.insure/);
-    expect(r.summary).toContain("PGI application is ready");
-  });
-
-  it("reports PGI not available when bi_completion_url is null", async () => {
-    fetchMock.mockResolvedValueOnce({
-      id: "bf-app-2",
-      pipeline_state: "Received",
-      documents: [],
-      bi_completion_url: null,
-    });
-    const r = await applicationStatus({ application_id: "bf-app-2" });
-    expect(r.ok).toBe(true);
-    expect(r.pgi_handoff?.available).toBe(false);
-    expect(r.summary).not.toContain("PGI application is ready");
+    expect(r.summary).toBe('You\'re at "Documents Required". Documents: 1/2.');
+    expect(JSON.stringify(r)).not.toMatch(/pgi|insurance/i);
   });
 
   it("returns ok=false on missing application_id", async () => {
@@ -117,34 +97,5 @@ describe("AGENT_BLOCK_v3 — docs.checklist", () => {
     expect(DOCS_CHECKLIST_TOOL_DESCRIPTOR.function.name).toBe("docs.checklist");
     expect(DOCS_CHECKLIST_TOOL_DESCRIPTOR.function.parameters.required).toEqual([]);
     expect(Object.keys(DOCS_CHECKLIST_TOOL_DESCRIPTOR.function.parameters.properties)).not.toContain("application_id");
-  });
-});
-
-describe("AGENT_BLOCK_v3 — pgi.completion_link", () => {
-  beforeEach(() => fetchMock.mockReset());
-
-  it("returns the URL when set", async () => {
-    fetchMock.mockResolvedValueOnce({
-      bi_public_id: "pub-xyz",
-      bi_completion_url: "https://www.boreal.insure/login?next=/applications/pub-xyz",
-    });
-    const r = await pgiCompletionLink({ application_id: "bf-app-1" });
-    expect(r.ok).toBe(true);
-    expect(r.available).toBe(true);
-    expect(r.completion_url).toMatch(/boreal\.insure/);
-  });
-
-  it("returns available=false with explanation when no handoff", async () => {
-    fetchMock.mockResolvedValueOnce({ bi_completion_url: null });
-    const r = await pgiCompletionLink({ application_id: "bf-app-2" });
-    expect(r.ok).toBe(true);
-    expect(r.available).toBe(false);
-    expect(r.summary).toContain("No PGI completion flow");
-  });
-
-  it("descriptor advertises its name and asks the model for no application id (AGENT_v789_IDENTITY)", () => {
-    expect(PGI_COMPLETION_LINK_TOOL_DESCRIPTOR.function.name).toBe("pgi.completion_link");
-    expect(PGI_COMPLETION_LINK_TOOL_DESCRIPTOR.function.parameters.required).toEqual([]);
-    expect(Object.keys(PGI_COMPLETION_LINK_TOOL_DESCRIPTOR.function.parameters.properties)).not.toContain("application_id");
   });
 });

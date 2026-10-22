@@ -48,7 +48,7 @@ export const CONTACT_TIMELINE_TOOL_DESCRIPTOR = {
   function: {
     name: "contact.timeline",
     description:
-      "Read-only activity timeline for a contact: recent calls and messages (SMS/email) in reverse-chronological order. Use when staff ask 'what's the history with this contact', 'when did we last talk to them', 'show me recent activity'. Provide the contact_id on the current screen; pass the active silo if known.",
+      "Read-only activity timeline for a contact: recent calls and messages (SMS/email) in reverse-chronological order. Use when staff ask 'what's the history with this contact', 'when did we last talk to them', 'show me recent activity'. Provide the contact_id on the current screen.",
     parameters: { type: "object", properties: { contact_id: { type: "string", description: "The contact to show history for (use the id on the current screen)." }, limit: { type: "number", description: "Max items to return (default 25)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: ["contact_id"] },
   },
 };
@@ -62,7 +62,7 @@ export const CALL_TRIAGE_TOOL_DESCRIPTOR = {
   function: {
     name: "call.triage",
     description:
-      "Read-only list of recent voicemails and missed calls that need follow-up. Use when staff ask 'any voicemails today', 'who do I need to call back', 'what missed calls are outstanding'. Pass the active silo to scope missed calls.",
+      "Read-only list of recent voicemails and missed calls that need follow-up. Use when staff ask 'any voicemails today', 'who do I need to call back', 'what missed calls are outstanding'..",
     parameters: { type: "object", properties: { limit: { type: "number", description: "Max items per list (default 15)." }, session_id: { type: "string", description: "Optional session id for correlation." } }, required: [] },
   },
 };
@@ -155,7 +155,7 @@ export const MARKETING_OVERVIEW_TOOL_DESCRIPTOR = {
   type: "function" as const,
   function: {
     name: "marketing.overview",
-    description: "Read marketing audience sizes and recent campaign sends: email + SMS opt-in totals, the available segments (contact tags) with recipient counts, and the last few send jobs. Use this before proposing a campaign so you know how many people a segment reaches. Pass the active silo if known.",
+    description: "Read marketing audience sizes and recent campaign sends: email + SMS opt-in totals, the available segments (contact tags) with recipient counts, and the last few send jobs. Use this before proposing a campaign so you know how many people a segment reaches..",
     parameters: { type: "object", properties: { session_id: { type: "string" } }, required: [] },
   },
 };

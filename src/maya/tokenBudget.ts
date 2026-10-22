@@ -1,7 +1,7 @@
 // AGENT_v789_TOKEN_BUDGET - in-memory daily OpenAI token budgets (replaces the unused
 // infrastructure/llmCostTracker.ts, which wrote to a database the agent does not have).
-//   - global: MAYA_DAILY_TOKEN_BUDGET tokens per UTC day (default 20,000,000)
-//   - per session: MAYA_SESSION_DAILY_TOKEN_BUDGET tokens per UTC day (default 2,000,000)
+//   - global: ASSISTANT_DAILY_TOKEN_BUDGET tokens per UTC day (default 20,000,000)
+//   - per session: ASSISTANT_SESSION_DAILY_TOKEN_BUDGET tokens per UTC day (default 2,000,000)
 // Past either budget Maya answers with a polite fallback instead of calling OpenAI.
 // MAYA_v817 - the per-session budget was a fixed 100,000 tokens: a client was cut off after ~10 questions and
 // stayed blocked for the rest of the day. It is now configurable with a 2,000,000 default (well over 250
@@ -32,13 +32,13 @@ function roll(now: number): void {
 }
 
 export function dailyTokenBudget(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.MAYA_DAILY_TOKEN_BUDGET);
+  const n = Number(env.ASSISTANT_DAILY_TOKEN_BUDGET);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_DAILY_TOKEN_BUDGET;
 }
 
-/** MAYA_v817 - per-session daily budget from MAYA_SESSION_DAILY_TOKEN_BUDGET (default 2,000,000). */
+/** MAYA_v817 - per-session daily budget from ASSISTANT_SESSION_DAILY_TOKEN_BUDGET (default 2,000,000). */
 export function sessionDailyTokenBudget(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.MAYA_SESSION_DAILY_TOKEN_BUDGET);
+  const n = Number(env.ASSISTANT_SESSION_DAILY_TOKEN_BUDGET);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_SESSION_DAILY_TOKEN_BUDGET;
 }
 

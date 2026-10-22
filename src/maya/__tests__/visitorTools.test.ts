@@ -19,13 +19,47 @@ import {
   APPLY_START_URL_TOOL_DESCRIPTOR,
 } from "../tools/leadCapture.js";
 import { PRODUCTS, QUALIFICATIONS } from "../tools/infoCatalog.js";
+import { setLicensee } from "../../licensee/brand.js";
+
+// KS_AGENT_v1_LICENSEE - the licensee's own catalog, as POST /api/maya/catalog-summary returns it.
+const CATALOG = {
+  ok: true, lenders: 12, products: 30,
+  categories: [
+    { category: "TERM", count: 20, min_amount: 25000, max_amount: 2000000, term_min: 12, term_max: 60, term_unit: "months", rate_min: 8, rate_max: 21 },
+    { category: "FACTORING", count: 10, min_amount: 10000, max_amount: 500000, term_min: null, term_max: null, term_unit: null, rate_min: null, rate_max: null },
+  ],
+};
 
 describe("AGENT_BLOCK_v4 — info.products", () => {
-  it("lists all products when no key is provided", async () => {
+  beforeEach(() => { callMock.mockReset(); callMock.mockResolvedValue(CATALOG); });
+
+  it("lists what the licensee offers, from its own catalog, without counts", async () => {
     const r = await infoProducts({});
     expect(r.ok).toBe(true);
+    expect(callMock).toHaveBeenCalledWith("/api/maya/catalog-summary", { method: "POST", body: {} });
+    expect(r.offered?.map((o) => o.category)).toEqual(["TERM", "FACTORING"]);
+    expect(r.offered?.[0]).toMatchObject({ name: "Term loan", min_amount: 25000, max_amount: 2000000, rate_min: 8, rate_max: 21 });
+    expect(r.summary).toContain("We currently offer: Term loan, Invoice factoring.");
+    expect(JSON.stringify(r)).not.toMatch(/"count"|"lenders"|"products":30/);
     expect(r.products?.length).toBe(PRODUCTS.length);
-    expect(r.summary).toContain(`${PRODUCTS.length} financing products`);
+  });
+
+  it("says whether a product is offered", async () => {
+    expect((await infoProducts({ product_key: "factoring" })).summary).toContain("We offer this.");
+    expect((await infoProducts({ product_key: "mca" })).summary).toContain("not on our current product list");
+  });
+
+  it("falls back to definitions only when the licensee's catalog cannot be read", async () => {
+    callMock.mockRejectedValue(new Error("down"));
+    const r = await infoProducts({});
+    expect(r.ok).toBe(true);
+    expect(r.offered).toBeUndefined();
+    expect(r.summary).toContain("could not be loaded");
+  });
+
+  it("the built-in definitions carry no amounts, terms or previous-owner products", () => {
+    const text = JSON.stringify(PRODUCTS);
+    expect(text).not.toMatch(/\$|CSBFP|Canada Small Business|typical_range/);
   });
 
   it("returns a specific product when key matches", async () => {
@@ -42,7 +76,7 @@ describe("AGENT_BLOCK_v4 — info.products", () => {
     expect(r.summary).toContain('No product matches "made_up"');
   });
 
-  it("does not describe PGI - Maya serves Boreal Financial only (AGENT_MAYA_BF_ONLY_v702)", async () => {
+  it("does not describe PGI - lending only (AGENT_MAYA_BF_ONLY_v702)", async () => {
     expect(PRODUCTS.some((p) => p.key === "pgi")).toBe(false);
   });
 
@@ -102,7 +136,7 @@ describe("AGENT_BLOCK_v4 — lead.capture", () => {
           name: "Jane Doe",
           companyName: "Acme",
           channel: "website",
-          source: "maya_visitor_tool",
+          source: "assistant_visitor_tool",
           utm_source: "google",
         }),
       }),
@@ -129,11 +163,24 @@ describe("AGENT_BLOCK_v4 — lead.capture", () => {
 });
 
 describe("AGENT_BLOCK_v4 — apply.start_url", () => {
-  it("returns the public apply URL", async () => {
+  it("returns the licensee's client app URL", async () => {
+    setLicensee({ company_name: "Acme Capital", assistant_name: "Ava", support_email: "", support_phone: "", mailing_address: "", urls: { server: "", portal: "", client: "https://client.acme.example", website: "" } });
     const r = await applyStartUrl();
+    setLicensee(null);
     expect(r.ok).toBe(true);
-    expect(r.url).toMatch(/^https:\/\/client\.boreal\.financial/);
+    expect(r.url).toBe("https://client.acme.example/");
     expect(r.summary).toContain(r.url);
+  });
+
+  it("falls back to CLIENT_URL, and says so when there is no link at all", async () => {
+    const prev = process.env.CLIENT_URL;
+    process.env.CLIENT_URL = "https://apply.acme.example/";
+    expect((await applyStartUrl()).url).toBe("https://apply.acme.example/");
+    delete process.env.CLIENT_URL;
+    const none = await applyStartUrl();
+    expect(none.ok).toBe(false);
+    expect(none.url).toBe("");
+    if (prev !== undefined) process.env.CLIENT_URL = prev;
   });
 
   it("descriptor advertises name", () => {

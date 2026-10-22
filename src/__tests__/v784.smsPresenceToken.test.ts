@@ -26,7 +26,7 @@ describe("comm.send_sms is draft only (v784)", () => {
     bf.fn.mockResolvedValueOnce({ pending: true, pendingId: "p1", preview: { to: "+1555", body: "hi" } });
     const r = await commSendSms({ body: "hi", contact_id: "c1", staff_user_id: "u-1" });
     expect(r).toMatchObject({ ok: true, pending: true, pendingId: "p1", message: SMS_DRAFT_REPLY });
-    expect(SMS_DRAFT_REPLY).toBe("Draft ready - press Send in the Maya panel to send it. It has NOT been sent.");
+    expect(SMS_DRAFT_REPLY).toBe("Draft ready - press Send on the draft to send it. It has NOT been sent.");
     const [path, opts] = bf.fn.mock.calls[0];
     expect(path).toBe("/api/maya/staff/send-sms");
     expect(opts.method).toBe("POST");

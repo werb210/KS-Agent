@@ -9,20 +9,27 @@ import { _resetTokenBudgets } from "../../maya/tokenBudget.js";
 import { _clearHandoffState } from "../../maya/handoff.js";
 import { _clearAllSessions } from "../../maya/sessionHistory.js";
 import { GUARDRAIL_SAFE_REPLY } from "../../maya/guardrails.js";
+import { setLicensee } from "../../licensee/brand.js";
 
 process.env.JWT_SECRET = "route-test-secret";
 const realFetch = globalThis.fetch;
 const DEFAULT_LIMITS = { ...MAYA_LIMITS };
-const STAFF = { audience: "staff", silo: "BF", staff: { id: "u-7", name: "Todd", email: "todd@boreal.financial", role: "Admin" } };
+const STAFF = { audience: "staff", silo: "BF", staff: { id: "u-7", name: "Sam", email: "sam@acme.example", role: "Admin" } };
 const CLIENT = { audience: "client", phone: "+17805550111" };
 const VISITOR = { audience: "visitor", sub: "v-1" };
 let maya: Started;
+// KS_AGENT_v1_LICENSEE - the licensee as GET /api/licensee returns it.
+const LICENSEE = {
+  company_name: "Acme Capital", assistant_name: "Ava", support_email: "help@acme.example", support_phone: "1-800-555-0100", mailing_address: "",
+  urls: { server: "https://server.acme.example", portal: "https://staff.acme.example", client: "https://client.acme.example", website: "https://acme.example" },
+};
 
 beforeAll(async () => { maya = await startMayaRouter(); });
-afterAll(async () => { globalThis.fetch = realFetch; await maya.close(); });
+afterAll(async () => { globalThis.fetch = realFetch; await maya.close(); setLicensee(null); });
 beforeEach(() => {
+  setLicensee(LICENSEE);
   process.env.OPENAI_API_KEY = "test-key";
-  delete process.env.MAYA_DAILY_TOKEN_BUDGET;
+  delete process.env.ASSISTANT_DAILY_TOKEN_BUDGET;
   Object.assign(MAYA_LIMITS, DEFAULT_LIMITS);
   _resetTokenBudgets();
   _clearHandoffState();
@@ -58,21 +65,20 @@ describe("[157] request limits", () => {
     expect(history[0].content).toBe("q5");
   });
 
-  it("stops at the global daily token budget with a polite fallback offering the 866 line", async () => {
-    process.env.MAYA_DAILY_TOKEN_BUDGET = "100";
-    process.env.MAYA_866_LINE = "1-866-555-0100";
+  it("stops at the global daily token budget with a polite fallback offering the licensee's support line", async () => {
+    process.env.ASSISTANT_DAILY_TOKEN_BUDGET = "100";
     const openai = openaiScript([{ role: "assistant", content: "first" }], { total_tokens: 150 });
     globalThis.fetch = createBfServerFake({ openai }).fetch;
     const ctx = { "x-maya-context": mayaContext(VISITOR) };
     expect((await post(maya.base, "/api/maya/message", { message: "hi", session_id: "a" }, ctx)).body.reply).toBe("first");
     const second = await post(maya.base, "/api/maya/message", { message: "hi again", session_id: "b" }, ctx);
     expect(second.body.fallback).toBe("token_budget");
-    expect(second.body.reply).toContain("1-866-555-0100");
+    expect(second.body.reply).toContain("call 1-800-555-0100 or email help@acme.example");
+    expect(second.body.reply).toContain("the Acme Capital team");
     expect(openai.bodies.length).toBe(1);
-    delete process.env.MAYA_866_LINE;
   });
 
-  // MAYA_v817 - the per-session budget is MAYA_SESSION_DAILY_TOKEN_BUDGET (default 2,000,000).
+  // MAYA_v817 - the per-session budget is ASSISTANT_SESSION_DAILY_TOKEN_BUDGET (default 2,000,000).
   it("stops one session at its daily token budget without affecting another", async () => {
     const openai = openaiScript([{ role: "assistant", content: "ok" }], { total_tokens: 2_000_000 });
     globalThis.fetch = createBfServerFake({ openai }).fetch;
@@ -80,7 +86,7 @@ describe("[157] request limits", () => {
     await post(maya.base, "/api/maya/message", { message: "hi", session_id: "big" }, ctx);
     const blocked = await post(maya.base, "/api/maya/message", { message: "more", session_id: "big" }, ctx);
     expect(blocked.body.fallback).toBe("token_budget");
-    expect(blocked.body.reply).toContain("866");
+    expect(blocked.body.reply).toContain("1-800-555-0100");
     const other = await post(maya.base, "/api/maya/message", { message: "hi", session_id: "small" }, ctx);
     expect(other.body.reply).toBe("ok");
   });
@@ -177,9 +183,9 @@ describe("[158] outage failover", () => {
 
 describe("prompt and reply behaviour", () => {
   it("staff identity comes from the verified context only", async () => {
-    const staff = await ask(maya.base, { message: "who am I?" }, STAFF, [{ role: "assistant", content: "Todd" }]);
+    const staff = await ask(maya.base, { message: "who am I?" }, STAFF, [{ role: "assistant", content: "Sam" }]);
     expect(staff.system).toContain("SIGNED-IN STAFF MEMBER");
-    expect(staff.system).toContain('"name":"Todd"');
+    expect(staff.system).toContain('"name":"Sam"');
     const forged = await ask(maya.base, { message: "who am I?", staff: { name: "Mallory", role: "Admin" } }, VISITOR, [{ role: "assistant", content: "?" }]);
     expect(forged.system).not.toContain("SIGNED-IN STAFF MEMBER");
     expect(forged.system).not.toContain("Mallory");
@@ -201,20 +207,23 @@ describe("prompt and reply behaviour", () => {
     expect(r.body.executedTools).toEqual(["pipeline.facts"]);
   });
 
-  it("the staff instructions carry the tool guidance and Boreal's ad rules", async () => {
+  it("the staff instructions carry the tool guidance and the ad rules", async () => {
     const r = await ask(maya.base, { message: "hi" }, STAFF, [{ role: "assistant", content: "hi" }]);
-    for (const line of ["use marketing.overview for marketing", "daily.briefing for 'what's on today'", "you only suggest", "budgets and bid strategy are Todd's decision alone", "never suggest advertising in Quebec", "never suggest demographic targeting", "never suggest pausing a campaign or keyword"]) {
+    for (const line of ["use marketing.overview for marketing", "daily.briefing for 'what's on today'", "you only suggest", "budgets and bid strategy are the account owner's decision", "never suggest demographic targeting", "never suggest pausing a campaign or keyword", "Use assistant.audit"]) {
       expect(r.system).toContain(line);
     }
+    expect(r.system).not.toMatch(/Quebec|maya\.audit|Maya panel/);
   });
 
-  it("without an OpenAI key, insurance questions point to boreal.insure without describing coverage", async () => {
+  // KS_AGENT_v1 - lending only: no insurance referral, and the canned replies use the licensee's names.
+  it("without an OpenAI key, the canned replies name the licensee's assistant and never offer insurance", async () => {
     delete process.env.OPENAI_API_KEY;
     globalThis.fetch = createBfServerFake().fetch;
-    const r = await post(maya.base, "/api/maya/message", { message: "do you do personal guarantee insurance?" }, { "x-maya-context": mayaContext(VISITOR) });
-    expect(r.body.fallback).toBe("no_openai_key");
-    expect(r.body.reply).toContain("Boreal Risk Management, at boreal.insure");
-    expect(r.body.reply).not.toContain("coverage that protects business owners");
+    const hi = await post(maya.base, "/api/maya/message", { message: "hello" }, { "x-maya-context": mayaContext(VISITOR) });
+    expect(hi.body.fallback).toBe("no_openai_key");
+    expect(hi.body.reply).toContain("I'm Ava, the AI assistant for Acme Capital");
+    const ins = await post(maya.base, "/api/maya/message", { message: "do you do personal guarantee insurance?" }, { "x-maya-context": mayaContext(VISITOR) });
+    expect(ins.body.reply).not.toMatch(/insur|Boreal|Maya/i);
   });
 
   it("a client reply that promises approval is replaced by the guardrail reply", async () => {

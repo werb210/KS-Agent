@@ -49,7 +49,7 @@ describe("Maya BF-Server persistence paths", () => {
   beforeEach(async () => {
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
-    process.env.SERVER_URL = "https://server.boreal.financial";
+    process.env.SERVER_URL = "https://server.acme.example";
     process.env.JWT_SECRET = "test-jwt-secret-min-10";
 
     const { mayaRouter } = await import("../maya.js");

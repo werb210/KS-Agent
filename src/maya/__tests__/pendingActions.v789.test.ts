@@ -11,7 +11,7 @@ import { isOwnTestRecipient } from "../tools/staffReadTools.js";
 process.env.JWT_SECRET = "pending-test-secret";
 process.env.OPENAI_API_KEY = "test-key";
 const realFetch = globalThis.fetch;
-const STAFF = { audience: "staff", silo: "BF", staff: { id: "u-7", name: "Todd", email: "todd@boreal.financial", role: "Admin", phone: "+17805550123" } };
+const STAFF = { audience: "staff", silo: "BF", staff: { id: "u-7", name: "Sam", email: "sam@acme.example", role: "Admin", phone: "+17805550123" } };
 let maya: Started;
 beforeAll(async () => { maya = await startMayaRouter(); });
 afterAll(async () => { globalThis.fetch = realFetch; await maya.close(); });
@@ -109,7 +109,7 @@ describe("Google Ads negatives through /api/maya/message", () => {
 
   it("another session or another staff member cannot confirm it", async () => {
     await ask(maya.base, { message: "remove free money", session_id: "s-own" }, STAFF, [toolCall("t1", "ads.negatives.remove", { id: "neg_1" }), { role: "assistant", content: "Preview." }]);
-    const other = { ...STAFF, staff: { ...STAFF.staff, id: "u-8", email: "other@boreal.financial" } };
+    const other = { ...STAFF, staff: { ...STAFF.staff, id: "u-8", email: "other@acme.example" } };
     const r = await ask(maya.base, { message: "yes", session_id: "s-own" }, other, [toolCall("t2", "pending.confirm"), { role: "assistant", content: "?" }]);
     expect(toolNames(r.openai)).not.toContain("pending_confirm");
     expect(confirmPosts(r.calls, "/api/maya/staff/ads-negatives/remove")).toEqual([]);
@@ -138,12 +138,12 @@ describe("marketing.send_campaign", () => {
   it("a test send goes only to the staff member's own email or phone", async () => {
     const fake = createBfServerFake();
     globalThis.fetch = fake.fetch;
-    const ctx = { audience: "staff" as const, staffEmail: "todd@boreal.financial", staffPhone: "+17805550123", subject: "u-7", sessionId: "s-t", silo: "BF" };
+    const ctx = { audience: "staff" as const, staffEmail: "sam@acme.example", staffPhone: "+17805550123", subject: "u-7", sessionId: "s-t", silo: "BF" };
     const refused = JSON.parse(await dispatchTool("marketing.send_campaign", { channel: "email", subject: "s", html: "h", test: "victim@example.com", staff_email: "victim@example.com" }, ctx));
     expect(refused.error).toBe("test_recipient_must_be_you");
     expect(fake.calls.length).toBe(0);
-    await dispatchTool("marketing.send_campaign", { channel: "email", subject: "s", html: "h", test: "Todd@Boreal.Financial" }, ctx);
-    expect(fake.calls.at(-1)?.body).toMatchObject({ test: "Todd@Boreal.Financial", confirm: false });
+    await dispatchTool("marketing.send_campaign", { channel: "email", subject: "s", html: "h", test: "Sam@Acme.Example" }, ctx);
+    expect(fake.calls.at(-1)?.body).toMatchObject({ test: "Sam@Acme.Example", confirm: false });
     expect(isOwnTestRecipient("(780) 555-0123", "sms", undefined, "+17805550123")).toBe(true);
     expect(isOwnTestRecipient("+17805550999", "sms", undefined, "+17805550123")).toBe(false);
   });

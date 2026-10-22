@@ -22,7 +22,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { globalThis.fetch = realFetch; await app.close(); });
 
-const ORIGIN = { Origin: "https://boreal.financial" };
+const ORIGIN = { Origin: "https://www.acme-capital.example" };
 
 describe("/api/maya/* requires X-Maya-Context", () => {
   it("401s a direct call with no context, even from an allowed origin or with a service token", async () => {

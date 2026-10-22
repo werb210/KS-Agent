@@ -19,7 +19,7 @@ function postJson(url: URL, payload: unknown): Promise<JsonResponse> {
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body),
-          Origin: "https://boreal.financial",
+          Origin: "https://www.acme-capital.example",
           // AGENT_v789_MAYA_CONTEXT_REQUIRED - BF-Server signs a context for every caller.
           "x-maya-context": visitorContext(),
         },

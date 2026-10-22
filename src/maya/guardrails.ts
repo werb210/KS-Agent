@@ -49,7 +49,7 @@ function privateNumberPatterns(env: NodeJS.ProcessEnv = process.env): RegExp[] {
     .split(",")
     .map((n) => n.replace(/\D/g, "").slice(-10))
     .filter((d) => d.length === 10)
-    .map((d) => new RegExp(`(?:\\+?\\s*1[\\s.-]*)?\\(?\\s*${d.slice(0, 3)}\\s*\\)?[\\s.-]*${d.slice(3, 6)}[\\s.-]*${d.slice(6)}\\b`, "g"));
+    .map((d) => new RegExp(`(?:\\+?\\s*1[\\s.-]*)?(?:\\(\\s*)?${d.slice(0, 3)}(?:\\s*\\))?[\\s.-]*${d.slice(3, 6)}[\\s.-]*${d.slice(6)}\\b`, "g"));
 }
 export const WITHHELD_NUMBER = "[number withheld]";
 /** What a private number is replaced with: the licensee's support phone, unless that is itself private. */

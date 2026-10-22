@@ -5,10 +5,10 @@ describe("maya session history (v83)", () => {
   it("empty for unknown session", () => { expect(getSessionHistory("nope")).toEqual([]); });
   it("remembers turn 1 on turn 2", () => {
     appendSessionTurn("s1", "Hi", "What's your name and an email or phone?");
-    appendSessionTurn("s1", "Todd, 4035550123", "Thanks Todd!");
+    appendSessionTurn("s1", "Sam, 4035550123", "Thanks Sam!");
     const h = getSessionHistory("s1");
     expect(h.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(h.some((m) => m.content.includes("Todd, 4035550123"))).toBe(true);
+    expect(h.some((m) => m.content.includes("Sam, 4035550123"))).toBe(true);
   });
   it("isolates sessions", () => {
     appendSessionTurn("a", "I'm Alice", "Hi Alice");

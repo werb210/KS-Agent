@@ -1,5 +1,5 @@
-// AGENT_v789_CONTRACT_FIXTURES - BF-Server response bodies for every path the live agent
-// calls, as BF-Server v789 returns them (JSON body, before callBFServer unwraps a
+// AGENT_v789_CONTRACT_FIXTURES - server response bodies for every path the live agent
+// calls, as the licensee's server (KS-server, a copy of the v789 server) returns them (JSON body, before callBFServer unwraps a
 // {status:"ok", data} envelope). The fetch fake in test/bfServerFake.ts answers ONLY these
 // paths; any other path fails the test, so a tool cannot quietly call a route that does
 // not exist on BF-Server. Paths are under /api/ with no /v1/. Lender products use
@@ -26,15 +26,13 @@ export const APPLICATION_SUMMARY = {
     { document_category: "financial_statements", status: "received" },
     { document_category: "void_cheque", status: "missing" },
   ],
-  bi_completion_url: null,
-  bi_public_id: null,
   // v789: offers, signature_status and continuation_url on application-summary.
   offers: [
     { id: "off_1", product_category: "TERM", amount: 200000, rate: "11.5%", rate_type: "APR", term_months: 36, status: "pending", expires_at: "2026-10-25T00:00:00.000Z" },
     { id: "off_2", product_category: "MCA", amount: 120000, rate: "1.32", rate_type: "factor", term_months: 12, status: "pending", expires_at: "2026-10-20T00:00:00.000Z" },
   ],
   signature_status: "pending",
-  continuation_url: "https://client.boreal.financial/applications/61AE/continue",
+  continuation_url: "https://client.acme.example/applications/61AE/continue",
   last_activity_at: "2026-10-09T17:20:00.000Z",
   next_action: "Collect the void cheque.",
 };
@@ -71,14 +69,32 @@ export const CLIENT_CHECKLIST = {
   summary: "Stage \"Additional Steps\". 11 of 14 done; 3 outstanding (3 forms): Debt Stack, Personal Net Worth, Professional Advisors.",
 };
 
+// KS_AGENT_v1_LICENSEE - GET /api/licensee (public): the licensee's branding and app addresses.
+export const LICENSEE = {
+  ok: true,
+  licensee: {
+    company_name: "Acme Capital", legal_name: "Acme Capital Inc.", assistant_name: "Ava", support_email: "help@acme.example", support_phone: "1-800-555-0100",
+    logo_url: "", primary_color: "#0B1F3A", accent_color: "#2563EB", time_zone: "America/Edmonton", country: "CA", mailing_address: "100 Main St\nCalgary AB",
+    urls: { server: "https://server.acme.example", portal: "https://staff.acme.example", client: "https://client.acme.example", website: "https://acme.example" },
+  },
+};
+
 export const BF_SERVER_FIXTURES: Record<string, unknown> = {
+  "/api/licensee": LICENSEE,
   "/api/telephony/presence": { status: "ok", data: [{ user_id: "u_1", status: "available", twilio_identity: "staff_u_1" }] },
   "/api/communications/maya-handoff": { status: "ok", fanout: { attempted: ["+17805550100", "+17805550101"], delivered: ["+17805550100"] } },
   "/api/maya/escalate": { ok: true, conversation_id: "conv_1", persisted: true },
   "/api/crm/startup-waitlist": { ok: true, id: "wl_1" },
   "/api/maya/knowledge-search": { ok: true, context: "" },
   "/api/maya/maya-persona": { ok: true, persona: "", tone: "" },
-  "/api/maya/catalog-summary": { ok: true, lenders: 84, products: 197, by_category: { TERM: 41, LOC: 33, EQUIPMENT: 28 } },
+  "/api/maya/catalog-summary": {
+    ok: true, lenders: 84, products: 197,
+    categories: [
+      { category: "TERM", count: 41, min_amount: 10000, max_amount: 5000000, term_min: 6, term_max: 60, term_unit: "months", rate_min: 7.5, rate_max: 24.9 },
+      { category: "LOC", count: 33, min_amount: 10000, max_amount: 1000000, term_min: null, term_max: null, term_unit: null, rate_min: 8.5, rate_max: 29 },
+      { category: "EQUIPMENT", count: 28, min_amount: 5000, max_amount: 3000000, term_min: 12, term_max: 84, term_unit: "months", rate_min: 6.9, rate_max: 19.9 },
+    ],
+  },
   "/api/maya/staff/application-summary": APPLICATION_SUMMARY,
   // MAYA_v817 - BF-Server routes/mayaClientChecklist.ts: the client portal's "What you need to do" list.
   "/api/maya/client-checklist": CLIENT_CHECKLIST,
@@ -110,7 +126,6 @@ export const BF_SERVER_FIXTURES: Record<string, unknown> = {
   "/api/maya/staff/marketing-overview": { ok: true, email_opt_in: 1840, sms_opt_in: 920, segments: [{ tag: "past-clients", recipients: 412 }], recent_jobs: [] },
   "/api/maya/staff/marketing-send": { ok: true, preview: true, channel: "email", tag: "past-clients", recipients: 412, pending_action_id: "pa_7f3c" },
   "/api/maya/staff/notes-read": { ok: true, notes: [{ id: "n_1", body: "Prefers text." }] },
-  "/api/maya/staff/pgi-readiness": { ok: true, ready: false, missing: ["ar_aging"], submitted: false },
   "/api/maya/staff/pipeline-facts": { ok: true, live: 12, by_stage: { "Received and In Review": 4, "Off to Lender": 3, Offer: 2 }, funded_30d: 3 },
   "/api/maya/staff/pipeline-query": { ok: true, answer: "4 applications are in Received and In Review.", rows: [] },
   "/api/maya/staff/referrers-overview": { ok: true, referrers: [{ name: "Prairie Accounting", referrals: 3 }] },

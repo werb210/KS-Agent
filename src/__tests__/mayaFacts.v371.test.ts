@@ -21,6 +21,13 @@ process.env.JWT_SECRET = "test-secret-at-least-10";
 const { mayaRouter } = await import("../api/maya.js");
 const { TOOLS_BY_AUDIENCE } = await import("../maya/audience.js");
 const { infoQualifications } = await import("../maya/tools/info.js");
+const { setLicensee } = await import("../licensee/brand.js");
+
+// KS_AGENT_v1_LICENSEE - the licensee as GET /api/licensee returns it.
+const LICENSEE = {
+  company_name: "Acme Capital", assistant_name: "Ava", support_email: "help@acme.example", support_phone: "1-800-555-0100",
+  mailing_address: "100 Main St, Calgary AB", urls: { server: "https://server.acme.example", portal: "https://staff.acme.example", client: "https://client.acme.example", website: "https://acme.example" },
+};
 
 const realFetch = globalThis.fetch;
 const openaiBodies: any[] = [];
@@ -30,6 +37,7 @@ let base = "";
 let server: any;
 
 beforeAll(async () => {
+  setLicensee(LICENSEE);
   const app = express(); app.use(express.json()); app.use(mayaRouter);
   server = app.listen(0); base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
   globalThis.fetch = (async (input: any, init?: any) => {
@@ -45,7 +53,7 @@ beforeAll(async () => {
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }) as any;
 });
-afterAll(() => { globalThis.fetch = realFetch; server?.close(); });
+afterAll(() => { globalThis.fetch = realFetch; server?.close(); setLicensee(null); });
 
 // node:http rather than fetch: the shared test setup fakes a browser window, which breaks fetch reads of a local server.
 // v784 - identity travels in a signed X-Maya-Context, not the audience header or body.
@@ -61,7 +69,7 @@ const ask = (body: any, audience: string): Promise<any> => new Promise((resolve,
   req.on("error", reject); req.end(data);
 });
 
-describe("staff Maya", () => {
+describe("staff assistant", () => {
   it("can chain tools (find, then summarise) and answers from them", async () => {
     openaiBodies.length = 0; bfCalls.length = 0;
     openaiScript = [
@@ -69,7 +77,7 @@ describe("staff Maya", () => {
       { role: "assistant", content: null, tool_calls: [{ id: "t2", type: "function", function: { name: "application_summary", arguments: JSON.stringify({ name: "BIBUSA" }) } }] },
       { role: "assistant", content: "BIBUSA CN LLC is in Documents Required." },
     ];
-    const r = await ask({ message: "Who is in Documents Required and what's the detail on it?", staff: { name: "Todd", role: "Admin" }, screen_context: { silo: "BF" } }, "staff");
+    const r = await ask({ message: "Who is in Documents Required and what's the detail on it?", staff: { name: "Sam", role: "Admin" }, screen_context: { silo: "BF" } }, "staff");
     expect(r.reply).toBe("BIBUSA CN LLC is in Documents Required.");
     expect(r.executedTools).toEqual(["pipeline.facts", "application.summary"]);
     const facts = bfTool.calls.find((c) => c.path.includes("/pipeline-facts"))!;
@@ -78,7 +86,9 @@ describe("staff Maya", () => {
     expect(bfTool.calls.find((c) => c.path.includes("/application-summary"))!.body.name).toBe("BIBUSA");
     expect(openaiBodies[1].tools?.length).toBeGreaterThan(0);
     const sys = openaiBodies[0].messages[0].content as string;
-    expect(sys).toContain("2630108 Alberta Ltd.");
+    expect(sys).toContain("You are Ava, the AI assistant for Acme Capital.");
+    expect(sys).toContain("COMPANY: you work for Acme Capital (mailing address: 100 Main St, Calgary AB)");
+    expect(sys).not.toMatch(/Boreal|Maya|Alberta Ltd|Sparling|Werboweski/);
     expect(sys).toContain("call pipeline.facts first");
     expect(sys).toContain("Never estimate or make up a number");
   });
@@ -92,28 +102,29 @@ describe("staff Maya", () => {
   });
 });
 
-describe("website Maya uses the site's facts", () => {
-  it("carries the website answers and no longer offers the tools that leaked internal counts", async () => {
+describe("website assistant uses the licensee's facts", () => {
+  it("takes company facts only from the licensee's data and no longer offers the tools that leaked internal counts", async () => {
     openaiBodies.length = 0;
-    openaiScript = [{ role: "assistant", content: "Boreal never pulls your credit." }];
+    openaiScript = [{ role: "assistant", content: "A lender reviews your file." }];
     await ask({ message: "Will applying hurt my credit?" }, "visitor");
     const sys = openaiBodies[0].messages[0].content as string;
-    for (const fact of ["never pulls your credit", "as little as 3-4 days", "$10K to $100M+", "80+ lenders", "at least 6 months in business", "SBA loans are available to start-ups", "Boreal's own team reviews the file first", "the lender pays Boreal", "2% fee agreement", "Talk to a Human button", "https://boreal.financial/us", "Personal Guarantee Insurance", "waitlist.join"]) expect(sys).toContain(fact);
-    expect(sys).not.toContain("1-866");
+    for (const fact of ["COMPANY FACTS: you represent Acme Capital", "come ONLY from tool results", "Never give a lender or product count a tool did not give you", "Never promise same-day funding", "Never say whether applying affects their credit unless the company knowledge says so", "Acme Capital handles the lenders", "do not offer insurance products", "Talk to a Human button", "waitlist.join", "https://client.acme.example"]) expect(sys).toContain(fact);
+    // the previous owner's site facts are gone
+    for (const gone of ["80+ lenders", "$10K to $100M+", "as little as 3-4 days", "2% fee agreement", "Personal Guarantee Insurance", "1-866", "Boreal"]) expect(sys).not.toContain(gone);
     expect(TOOLS_BY_AUDIENCE.visitor).not.toContain("info.lenders");
     expect(TOOLS_BY_AUDIENCE.visitor).not.toContain("catalog.summary");
     expect(sys).toContain("Never end a reply with 'Would you like to proceed?'");
   });
 });
 
-describe("client Maya", () => {
+describe("client assistant", () => {
   it("sees the full application profile and follows the client rules", async () => {
     openaiBodies.length = 0;
     openaiScript = [{ role: "assistant", content: "ok" }];
     const prev = globalThis.fetch;
     globalThis.fetch = (async (input: any, init?: any) => {
       if (String(input).includes("/applications-by-phone")) {
-        return new Response(JSON.stringify({ ok: true, contactName: "Todd", applications: [{ shortId: "61AE", name: "TEST - Todd's Grocery Store", productCategory: "SBA", stage: "Off to Lender",
+        return new Response(JSON.stringify({ ok: true, contactName: "Sam", applications: [{ shortId: "61AE", name: "TEST - Sam's Grocery Store", productCategory: "SBA", stage: "Off to Lender",
           business: { street: "1 Main", employees: 12 }, financialProfile: { useOfFunds: "Expansion", existingDebt: 0 }, documents: { missing: [], received: ["Lease"], accepted: ["Bank statements"] } }], offers: [] }), { status: 200 });
       }
       return (prev as any)(input, init);
@@ -130,12 +141,11 @@ describe("client Maya", () => {
   });
 });
 
-describe("qualifications match the website", () => {
-  it("no longer quotes credit floors or $120k revenue minimums", async () => {
+describe("qualifications are general guidance", () => {
+  it("quotes no thresholds of its own - the licensee's come from its knowledge", async () => {
     // AGENT_v789: checked on what info.qualifications actually answers, not on the source text.
     const cat = JSON.stringify(await infoQualifications({}));
-    expect(cat).not.toContain("Mid-600s");
-    expect(cat).toContain("Boreal never pulls your credit");
-    expect(cat).toContain("Canada: at least 6 months in business");
+    for (const gone of ["Mid-600s", "never pulls your credit", "6 months", "$10,000", "Boreal"]) expect(cat).not.toContain(gone);
+    expect(cat).toContain("Only quote a specific minimum if the company knowledge gives one");
   });
 });

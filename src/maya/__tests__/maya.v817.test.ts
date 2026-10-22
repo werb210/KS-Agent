@@ -1,6 +1,7 @@
-// MAYA_v817 - fixes from the live client-portal test ("TEST - Todd's Grocery Store", Additional Steps, 11 of 14
+// MAYA_v817 - fixes from the live client-portal test ("TEST - Sam's Grocery Store", Additional Steps, 11 of 14
 // done, three forms left): Maya said "all set", invented counts and stage names, was cut off after ~10 questions,
-// and her limit message named a button the portal does not have and an 866 line without the number.
+// and the limit message named a button the portal does not have and a support line without the number.
+// KS_AGENT_v1_LICENSEE - the support line is now the licensee's own (GET /api/licensee).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { dispatchTool, type DispatchContext } from "../dispatch.js";
 import { TOOLS_BY_AUDIENCE } from "../audience.js";
@@ -12,7 +13,8 @@ import { _resetTokenBudgets, checkBudget, recordUsage, sessionDailyTokenBudget, 
 import { _clearAllSessions, appendSessionTurn, getSessionHistory, MAX_HISTORY_ENTRY_CHARS } from "../sessionHistory.js";
 import { _clearHandoffState } from "../handoff.js";
 import { scrubPrivateNumbers } from "../guardrails.js";
-import { budgetFallbackReply, helpSurface, FAILOVER_REPLIES, DEFAULT_866_LINE } from "../../api/maya.js";
+import { budgetFallbackReply, helpSurface, FAILOVER_REPLIES } from "../../api/maya.js";
+import { setLicensee, type Licensee } from "../../licensee/brand.js";
 import { createBfServerFake, type FakeCall } from "../../../test/bfServerFake.js";
 import { APP_ID, APPLICATIONS_BY_PHONE, CLIENT_CHECKLIST } from "../../../test/fixtures/bfServer.v789.js";
 import { post, startMayaRouter, type Started } from "../../../test/mayaHarness.js";
@@ -20,7 +22,7 @@ import { mayaContext } from "../../../test/mayaContext.js";
 
 const realFetch = globalThis.fetch;
 const PRIVATE = /403\D{0,3}555\D{0,3}0199/;
-process.env.MAYA_PRIVATE_NUMBERS = "403-555-0199"; // a stand-in private number (the real one lives only in the setting)
+process.env.ASSISTANT_PRIVATE_NUMBERS = "403-555-0199"; // a stand-in private number (the real one lives only in the setting)
 const PHONE = "+17805550111";
 const CLIENT: DispatchContext = { audience: "client", phone: PHONE, subject: PHONE, sessionId: "s-c", applicationId: APP_ID, requestId: "r1" };
 let calls: FakeCall[] = [];
@@ -30,18 +32,23 @@ function useFake(overrides: Record<string, unknown> = {}, openai?: (c: FakeCall)
   globalThis.fetch = fake.fetch;
 }
 const bodyOf = (path: string) => calls.find((c) => c.path === path)?.body;
+const SUPPORT = "1-800-555-0100";
+const LICENSEE: Licensee = {
+  company_name: "Acme Capital", assistant_name: "Ava", support_email: "", support_phone: SUPPORT, mailing_address: "",
+  urls: { server: "", portal: "", client: "https://client.acme.example", website: "" },
+};
 
 beforeEach(() => {
   process.env.JWT_SECRET = "v817-secret";
-  delete process.env.MAYA_SESSION_DAILY_TOKEN_BUDGET;
-  delete process.env.MAYA_DAILY_TOKEN_BUDGET;
-  delete process.env.MAYA_866_LINE;
+  delete process.env.ASSISTANT_SESSION_DAILY_TOKEN_BUDGET;
+  delete process.env.ASSISTANT_DAILY_TOKEN_BUDGET;
+  setLicensee(LICENSEE);
   _resetTokenBudgets();
   _clearAllSessions();
   _clearHandoffState();
   useFake();
 });
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; setLicensee(null); });
 
 describe("1. application.checklist - the portal's own to-do list, forms included", () => {
   it("is a client tool only", () => {
@@ -101,7 +108,7 @@ describe("2b. client instructions", () => {
     try {
       process.env.OPENAI_API_KEY = "test-key";
       const bodies: any[] = [];
-      useFake({ "/api/maya/staff/applications-by-phone": { ...APPLICATIONS_BY_PHONE, applications: [{ ...APPLICATIONS_BY_PHONE.applications[0], name: "TEST - Todd's Grocery Store", stage: "Additional Steps Required" }] } },
+      useFake({ "/api/maya/staff/applications-by-phone": { ...APPLICATIONS_BY_PHONE, applications: [{ ...APPLICATIONS_BY_PHONE.applications[0], name: "TEST - Sam's Grocery Store", stage: "Additional Steps Required" }] } },
         (c) => { bodies.push(c.body); return { choices: [{ message: { role: "assistant", content: "ok" } }], usage: { total_tokens: 10 } }; });
       await post(maya.base, "/api/maya/message", { message: "Anything left?", session_id: "p1", application_id: APP_ID, screen_context: { surface: "client", page: "Client portal chat (phone)" } },
         { "x-maya-context": mayaContext({ audience: "client", phone: PHONE }, "v817-secret") });
@@ -133,7 +140,8 @@ describe("3. forms.field_help - real field labels, explain only", () => {
     const pnw = JSON.stringify((await formsFieldHelp({ form: "personal statement of affairs" })).sections);
     for (const l of ["SIN (Canada) or SSN (US)", "Marital status", "Ever filed for bankruptcy", "Taxes owing (CRA or IRS)", "Mortgage on real estate 1-3"]) expect(pnw).toContain(l);
     const adv = JSON.stringify((await formsFieldHelp({ form: "Professional Advisors" })).sections);
-    for (const l of ["Firm", "Contact", "Accounting software used", "Primary bank", "Authorized limit (existing facility)", "I authorize Boreal Financial"]) expect(adv).toContain(l);
+    for (const l of ["Firm", "Contact", "Accounting software used", "Primary bank", "Authorized limit (existing facility)", "I authorize Acme Capital to discuss"]) expect(adv).toContain(l);
+    expect(adv).not.toContain("{company}");
   });
 
   it("narrows to the asked field and always carries the never-fill-in rule", async () => {
@@ -144,12 +152,12 @@ describe("3. forms.field_help - real field labels, explain only", () => {
 });
 
 describe("4. budget and history", () => {
-  it("per-session budget comes from MAYA_SESSION_DAILY_TOKEN_BUDGET, default 2,000,000, and still stops a session", () => {
+  it("per-session budget comes from ASSISTANT_SESSION_DAILY_TOKEN_BUDGET, default 2,000,000, and still stops a session", () => {
     expect(sessionDailyTokenBudget({})).toBe(2_000_000);
-    expect(sessionDailyTokenBudget({ MAYA_SESSION_DAILY_TOKEN_BUDGET: "500000" })).toBe(500_000);
-    expect(sessionDailyTokenBudget({ MAYA_SESSION_DAILY_TOKEN_BUDGET: "junk" })).toBe(2_000_000);
+    expect(sessionDailyTokenBudget({ ASSISTANT_SESSION_DAILY_TOKEN_BUDGET: "500000" })).toBe(500_000);
+    expect(sessionDailyTokenBudget({ ASSISTANT_SESSION_DAILY_TOKEN_BUDGET: "junk" })).toBe(2_000_000);
     expect(dailyTokenBudget({})).toBeGreaterThan(sessionDailyTokenBudget({}));
-    process.env.MAYA_SESSION_DAILY_TOKEN_BUDGET = "1000";
+    process.env.ASSISTANT_SESSION_DAILY_TOKEN_BUDGET = "1000";
     recordUsage("k", 999);
     expect(checkBudget("k").ok).toBe(true);
     recordUsage("k", 1);
@@ -227,14 +235,13 @@ describe("4b. a 250-question client conversation is not cut off", () => {
 });
 
 describe("5. limit and fallback messages", () => {
-  it("in the client portal chat: no Talk to a Human, the advisor instead, and the 866 number", () => {
+  it("in the client portal chat: no Talk to a Human, the advisor instead, and the licensee's support number", () => {
     const surface = helpSurface("client", { surface: "client", page: "Client portal chat (phone)" });
     expect(surface).toBe("client_portal_chat");
     const msg = budgetFallbackReply(surface);
     expect(msg).not.toMatch(/Talk to a Human/);
     expect(msg).toContain("Send to my advisor");
-    expect(msg).toContain("1-866-631-8939");
-    expect(DEFAULT_866_LINE).toBe("1-866-631-8939");
+    expect(msg).toContain(SUPPORT);
     expect(FAILOVER_REPLIES.failed(surface)).not.toMatch(/Talk to a Human/);
   });
 
@@ -243,25 +250,30 @@ describe("5. limit and fallback messages", () => {
     expect(budgetFallbackReply(helpSurface("client", { page: "Application wizard - Step 2 of 6" }))).toContain("Talk to a Human");
     const unknown = budgetFallbackReply(helpSurface("client", null));
     expect(unknown).not.toMatch(/Talk to a Human|tap/i);
-    expect(unknown).toContain("1-866-631-8939");
+    expect(unknown).toContain(SUPPORT);
     expect(budgetFallbackReply("staff")).not.toMatch(/Talk to a Human/);
   });
 
-  it("MAYA_866_LINE overrides the number, but never with the private cell", () => {
-    process.env.MAYA_866_LINE = "1-866-555-0100";
-    expect(budgetFallbackReply()).toContain("1-866-555-0100");
-    process.env.MAYA_866_LINE = "403-555-0199";
+  it("uses the licensee's support line, but never a private number, and invents none when there is no line", () => {
+    setLicensee({ ...LICENSEE, support_phone: "1-888-555-0123" });
+    expect(budgetFallbackReply()).toContain("1-888-555-0123");
+    setLicensee({ ...LICENSEE, support_phone: "403-555-0199" });
     expect(budgetFallbackReply()).not.toMatch(PRIVATE);
+    setLicensee({ ...LICENSEE, support_phone: "", support_email: "" });
+    expect(budgetFallbackReply()).toBe("Sorry - I can't take more questions right now. Please try again a little later.");
+    expect(budgetFallbackReply()).not.toMatch(/\d{3}\D?\d{4}/);
   });
 });
 
 describe("6. a private number never appears", () => {
   it("is scrubbed in every spelling", () => {
     for (const t of ["403-555-0199", "(403) 555-0199", "+1 403 555 0199", "4035550199", "1.403.555.0199"]) {
-      const out = scrubPrivateNumbers(`Call Todd at ${t} anytime.`);
+      const out = scrubPrivateNumbers(`Call Sam at ${t} anytime.`);
       expect(out).not.toMatch(PRIVATE);
-      expect(out).toContain("1-866-631-8939");
+      expect(out).toContain(SUPPORT);
     }
+    setLicensee(null);
+    expect(scrubPrivateNumbers("Call 403-555-0199.")).toBe("Call [number withheld].");
   });
 
   it("is in no prompt, tool description, or reply - even when the model or trained knowledge says it", async () => {
@@ -272,12 +284,12 @@ describe("6. a private number never appears", () => {
       for (const audience of ["visitor", "client", "staff"] as const) {
         useFake({ "/api/maya/knowledge-search": { ok: true, context: "Owner cell: 403-555-0199" } }, (c) => {
           bodies.push(c.body);
-          return { choices: [{ message: { role: "assistant", content: "Text Todd on (403) 555-0199." } }], usage: { total_tokens: 10 } };
+          return { choices: [{ message: { role: "assistant", content: "Text Sam on (403) 555-0199." } }], usage: { total_tokens: 10 } };
         });
-        const claims = audience === "staff" ? { audience, staff: { id: "u1", name: "Todd", email: "t@b.f", role: "Admin" } } : audience === "client" ? { audience, phone: PHONE } : { audience, sub: "v" };
-        const r = await post(maya.base, "/api/maya/message", { message: "What's Todd's number?", session_id: "p-" + audience }, { "x-maya-context": mayaContext(claims, "v817-secret") });
+        const claims = audience === "staff" ? { audience, staff: { id: "u1", name: "Sam", email: "t@b.f", role: "Admin" } } : audience === "client" ? { audience, phone: PHONE } : { audience, sub: "v" };
+        const r = await post(maya.base, "/api/maya/message", { message: "What's Sam's number?", session_id: "p-" + audience }, { "x-maya-context": mayaContext(claims, "v817-secret") });
         expect(r.body.reply).not.toMatch(PRIVATE);
-        expect(r.body.reply).toContain("1-866-631-8939");
+        expect(r.body.reply).toContain(SUPPORT);
       }
       for (const b of bodies) expect(JSON.stringify(b)).not.toMatch(PRIVATE);
       for (const fb of ["website", "client_widget", "client_portal_chat", "staff", "unknown"] as const) {

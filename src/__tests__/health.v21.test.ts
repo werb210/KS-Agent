@@ -19,7 +19,6 @@ describe("AGENT_BLOCK_v21_HEALTHCHECK_REAL_v1", () => {
     delete process.env.JWT_SECRET;
     delete process.env.TWILIO_ACCOUNT_SID;
     delete process.env.TWILIO_AUTH_TOKEN;
-    delete process.env.MAYA_HANDOFF_TO;
 
     const { app } = createApp({ deps: buildDeps() });
     const server = await new Promise<import("node:http").Server>((resolve) => {

@@ -23,8 +23,8 @@ describe("v657 Maya insight tools", () => {
   it("call the matching BF-Server endpoints", async () => {
     await tools.adsPerformance({ days: 14 });
     expect(callBFServer).toHaveBeenLastCalledWith("/api/maya/staff/ads-performance", { method: "POST", body: { days: 14, session_id: undefined } });
-    await tools.commsOverview({ silo: "BF", user_email: "todd.w@boreal.financial" });
-    expect(callBFServer).toHaveBeenLastCalledWith("/api/maya/staff/comms-overview", { method: "POST", body: { silo: "BF", user_email: "todd.w@boreal.financial", session_id: undefined } });
+    await tools.commsOverview({ silo: "BF", user_email: "sam@acme.example" });
+    expect(callBFServer).toHaveBeenLastCalledWith("/api/maya/staff/comms-overview", { method: "POST", body: { silo: "BF", user_email: "sam@acme.example", session_id: undefined } });
     await tools.contactPicture({ company_id: "co1" }); expect(callBFServer.mock.lastCall?.[0]).toBe("/api/maya/staff/contact-picture");
     await tools.automationsOverview({}); expect(callBFServer.mock.lastCall?.[0]).toBe("/api/maya/staff/automations-overview");
     await tools.referrersOverview({}); expect(callBFServer.mock.lastCall?.[0]).toBe("/api/maya/staff/referrers-overview");

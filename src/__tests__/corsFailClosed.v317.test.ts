@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import http from "http";
 import { createApp } from "../app.js";
+import { setLicensee } from "../licensee/brand.js";
 import type { RuntimeDependencies } from "../dependencies/types.js";
 
 function buildDeps(): RuntimeDependencies {
@@ -43,6 +44,7 @@ async function getWithOrigin(origin: string | null): Promise<{ code: number; aca
 describe("CORS fail-closed in production (v317)", () => {
   const prev = { node: process.env.NODE_ENV, cors: process.env.CORS_ALLOWED_ORIGINS };
   afterEach(() => {
+    setLicensee(null);
     process.env.NODE_ENV = prev.node;
     if (prev.cors === undefined) delete process.env.CORS_ALLOWED_ORIGINS;
     else process.env.CORS_ALLOWED_ORIGINS = prev.cors;
@@ -55,12 +57,26 @@ describe("CORS fail-closed in production (v317)", () => {
     expect(res.code).toBe(403);
   });
 
-  it("allows a known Boreal default origin when CORS_ALLOWED_ORIGINS is unset in production", async () => {
+  // KS_AGENT_v1_LICENSEE - the defaults are the licensee's own apps, from GET /api/licensee.
+  it("allows the licensee's own app origins when CORS_ALLOWED_ORIGINS is unset in production", async () => {
     process.env.NODE_ENV = "production";
     delete process.env.CORS_ALLOWED_ORIGINS;
-    const res = await getWithOrigin("https://www.boreal.financial");
-    expect(res.code).toBe(200);
-    expect(res.acao).toBe("https://www.boreal.financial");
+    setLicensee({
+      company_name: "Acme Capital", assistant_name: "Ava", support_email: "", support_phone: "", mailing_address: "",
+      urls: { server: "https://server.acme.example", portal: "https://staff.acme.example", client: "https://client.acme.example", website: "https://acme.example" },
+    });
+    for (const origin of ["https://staff.acme.example", "https://client.acme.example", "https://acme.example", "https://www.acme.example"]) {
+      const res = await getWithOrigin(origin);
+      expect(res.code, origin).toBe(200);
+      expect(res.acao).toBe(origin);
+    }
+    expect((await getWithOrigin("https://server.acme.example.evil.example")).code).toBe(403);
+  });
+
+  it("allows no browser origin before the licensee has loaded", async () => {
+    process.env.NODE_ENV = "production";
+    delete process.env.CORS_ALLOWED_ORIGINS;
+    expect((await getWithOrigin("https://client.acme.example")).code).toBe(403);
   });
 
   it("an explicit CORS_ALLOWED_ORIGINS takes precedence over the defaults", async () => {
@@ -69,7 +85,11 @@ describe("CORS fail-closed in production (v317)", () => {
     const allowed = await getWithOrigin("https://partner.example.com");
     expect(allowed.code).toBe(200);
     expect(allowed.acao).toBe("https://partner.example.com");
-    const denied = await getWithOrigin("https://www.boreal.financial");
+    setLicensee({
+      company_name: "Acme Capital", assistant_name: "Ava", support_email: "", support_phone: "", mailing_address: "",
+      urls: { server: "", portal: "", client: "https://client.acme.example", website: "" },
+    });
+    const denied = await getWithOrigin("https://client.acme.example");
     expect(denied.code).toBe(403);
   });
 
