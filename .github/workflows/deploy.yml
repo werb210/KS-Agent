@@ -1,10 +1,12 @@
 name: Build and deploy the assistant to Azure Web App
 
 # KS_AGENT_v1_DEPLOY - mirrors KS-server's deploy.yml. Runs only after the "CI" workflow finished successfully for a
-# push to main (or by hand), and deploys exactly the commit CI tested. Each licensee runs its own agent next to its own
-# KS-server, so the target app is a repository variable, not a name in this file:
-#   secrets.AZURE_CREDENTIALS    service principal (az ad sp create-for-rbac --sdk-auth) limited to the licensee's group
+# push to main (or by hand), and deploys exactly the commit CI tested. The development copy's target is set by
+# repository settings (the job is skipped while AZURE_WEBAPP_NAME is empty):
+#   secrets.AZURE_CREDENTIALS    service principal (az ad sp create-for-rbac --sdk-auth) limited to the dev group
 #   vars.AZURE_WEBAPP_NAME       the Web App to deploy to (e.g. ks-agent-dev)
+# KS_LICENSEE_DEPLOY_v1 - each licensee runs its own agent next to its own KS-server; the licensee-* jobs below deploy
+# to every licensee in deploy/licensees.json, with settings from its GitHub environment (normally ks-<code>).
 # App settings on the Web App (not here): SERVER_URL, JWT_SECRET (same as KS-server), OPENAI_API_KEY,
 # SCM_DO_BUILD_DURING_DEPLOYMENT=false. App Service sets PORT.
 on:
@@ -13,6 +15,14 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      licensee:
+        description: >-
+          Only this licensee (its code in deploy/licensees.json, e.g. northwind). Empty deploys the development copy
+          and every enabled licensee.
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: deploy-ks-agent
@@ -22,9 +32,10 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-24.04
     # No assistant Web App yet (AZURE_WEBAPP_NAME unset): skip instead of failing every push.
+    # KS_LICENSEE_DEPLOY_v1 - a manual run for one licensee leaves the development copy alone.
     if: >-
       vars.AZURE_WEBAPP_NAME != '' && (
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.licensee == '') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push'))
 
@@ -78,4 +89,132 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: release.zip
+
+  # KS_LICENSEE_DEPLOY_v1 - every licensee's own assistant (resource group ks-<code>). deploy/licensees.json lists the
+  # licensees; each one's settings live in its GitHub environment (normally ks-<code>, Settings > Environments):
+  #   secret   AZURE_CREDENTIALS   service principal limited to ks-<code> (provision-licensee.sh CREATE_DEPLOY_SP=1)
+  #   variable AZURE_WEBAPP_NAME   optional; default ks-<code>-agent
+  # Separate jobs from the development deploy above, so neither blocks the other, and one licensee failing never
+  # stops the rest (fail-fast: false).
+  licensee-plan:
+    runs-on: ubuntu-24.04
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      repo_credentials: ${{ steps.repo.outputs.credentials }}
+      repo_webapp_name: ${{ steps.repo.outputs.webapp_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Licensees to deploy
+        id: plan
+        env:
+          WANTED: ${{ inputs.licensee }}
+        run: node deploy/licensee-matrix.mjs agent "$WANTED"
+
+      # A licensee environment without its own value silently gets the repository's (the development copy's).
+      # Fingerprints let each licensee job notice that without the secret itself leaving this job.
+      - name: Repository-level settings (to tell them apart from a licensee's)
+        id: repo
+        env:
+          REPO_AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          REPO_AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          {
+            echo "credentials=$(printf '%s' "$REPO_AZURE_CREDENTIALS" | sha256sum | cut -d' ' -f1)"
+            echo "webapp_name=$REPO_AZURE_WEBAPP_NAME"
+          } >> "$GITHUB_OUTPUT"
+
+  licensee-package:
+    needs: licensee-plan
+    if: needs.licensee-plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build
+        run: |
+          test -f dist/index.js
+          node -e "const s=require('fs').statSync('dist/index.js'); if(!s.size){process.exit(1)}"
+
+      - name: Prune dev deps
+        run: npm prune --omit=dev
+
+      - name: Create deployment package
+        run: |
+          zip -q -r release.zip dist node_modules package.json package-lock.json -x "node_modules/.cache/*"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ks-agent-release
+          path: release.zip
+          retention-days: 1
+
+  licensee-deploy:
+    name: deploy ${{ matrix.code }}
+    needs: [licensee-plan, licensee-package]
+    if: needs.licensee-plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.licensee-plan.outputs.matrix) }}
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: deploy-ks-agent-${{ matrix.code }}
+      cancel-in-progress: false
+    steps:
+      - name: Check the licensee's settings
+        id: settings
+        env:
+          CODE: ${{ matrix.code }}
+          ENVIRONMENT: ${{ matrix.environment }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          REPO_CREDENTIALS: ${{ needs.licensee-plan.outputs.repo_credentials }}
+          REPO_WEBAPP_NAME: ${{ needs.licensee-plan.outputs.repo_webapp_name }}
+        run: |
+          if [ -z "$AZURE_CREDENTIALS" ] ||
+             [ "$(printf '%s' "$AZURE_CREDENTIALS" | sha256sum | cut -d' ' -f1)" = "$REPO_CREDENTIALS" ]; then
+            echo "::error title=$CODE::Add the secret AZURE_CREDENTIALS (the licensee's deploy service principal) to the GitHub environment '$ENVIRONMENT'."
+            exit 1
+          fi
+          app="$AZURE_WEBAPP_NAME"
+          if [ -z "$app" ] || [ "$app" = "$REPO_WEBAPP_NAME" ]; then app="ks-$CODE-agent"; fi
+          echo "webapp=$app" >> "$GITHUB_OUTPUT"
+          echo "Deploying to $app"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ks-agent-release
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.settings.outputs.webapp }}
           package: release.zip

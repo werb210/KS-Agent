@@ -42,6 +42,10 @@ jobs:
       - name: Source-grep test guard
         run: npm run check:source-grep
 
+      # KS_LICENSEE_DEPLOY_v1 - the licensee registry the deploy workflow reads must be valid before it reaches main.
+      - name: Licensee deploy registry
+        run: node deploy/licensee-matrix.mjs --check
+
       - name: Build
         run: npm run build
 
