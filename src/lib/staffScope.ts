@@ -9,7 +9,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // licensee's server), whatever silo the portal or the model names.
 export const LENDING_SILO = "BF";
 
-export type StaffScope = { silo: string; role: string | null };
+// KS_AGENT_v2_ACTING_STAFF - and the acting staff member: callBFServer sends their id (staff_user_id) on every staff
+// call, plus the X-Maya-Context token KS-server signed for this request, so KS-server can check that id against its own
+// signature and show the assistant only the records that person may see (teams and record visibility).
+export type StaffScope = { silo: string; role: string | null; staffUserId?: string | null; context?: string | null };
 
 const als = new AsyncLocalStorage<StaffScope>();
 
