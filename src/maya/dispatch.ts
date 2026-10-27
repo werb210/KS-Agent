@@ -37,6 +37,9 @@ export type DispatchContext = {
   staffRole?: string | null;
   /** AGENT_v784_MAYA_CONTEXT - the signed-in staff member's id from the verified context token. */
   staffId?: string | null;
+  /** KS_AGENT_v2_ACTING_STAFF - the X-Maya-Context token KS-server signed for this request (staff only), sent back on
+   * staff calls so KS-server can verify who is acting before applying their record visibility. */
+  mayaContext?: string | null;
   silo?: string | null;
   /** AGENT_v789_PENDING_ACTIONS - the id of this /api/maya/message request. */
   requestId?: string | null;
@@ -135,7 +138,8 @@ export function injectContext(
       role: ctx.staffRole ?? undefined,
       ...(sessionId ? { session_id: sessionId } : {}),
     };
-    if (toolName === "comm.send_sms") args.staff_user_id = ctx.staffId ?? undefined; // AGENT_v784_SMS_DRAFT_ONLY
+    // AGENT_v784_SMS_DRAFT_ONLY / KS_AGENT_v2_ACTING_STAFF - every staff tool carries the verified staff member's id.
+    args.staff_user_id = ctx.staffId ?? undefined;
     if (toolName === "comms.overview") args.user_email = ctx.staffEmail ?? undefined; // AGENT_MAYA_INSIGHTS_v657
     if (toolName === "marketing.send_campaign") {
       args.staff_email = ctx.staffEmail ?? undefined;
@@ -283,7 +287,7 @@ export async function dispatchTool(
   const run = (): Promise<unknown> => (toolName === CONFIRM_TOOL ? runConfirm(ctx) : entry.run(args));
   try {
     const result = ctx.audience === "staff"
-      ? await runInStaffScope({ silo: LENDING_SILO, role: ctx.staffRole ?? null }, run)
+      ? await runInStaffScope({ silo: LENDING_SILO, role: ctx.staffRole ?? null, staffUserId: ctx.staffId ?? null, context: ctx.mayaContext ?? null }, run)
       : await run();
     if (HANDOFF_TOOLS.has(toolName)) finishHandoff(handoffKey, (result as { ok?: unknown })?.ok === true);
     // v431 - remember what find_mine resolved so the follow-up tools can use it.
