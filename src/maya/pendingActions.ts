@@ -10,6 +10,9 @@
 // Text inside a tool result, a page, a document or screen_context is never the staff
 // member's latest message, so injected text cannot approve anything.
 
+// KS_SHARED_HOSTING_v1 - stored per brokerage (tenantKey), so a confirmation never crosses brokerages.
+import { tenantKey } from "../tenancy/context.js";
+
 export type PendingKind = "ads.negatives.add" | "ads.negatives.remove" | "marketing.send_campaign";
 
 export type PendingAction = {
@@ -39,12 +42,13 @@ const store = new Map<string, PendingAction>();
 
 export function storePendingAction(key: string, action: PendingAction): boolean {
   if (!key) return false;
-  store.set(key, action);
+  store.set(tenantKey(key), action);
   return true;
 }
 
 export function getPendingAction(key: string, now: number = Date.now()): PendingAction | null {
   if (!key) return null;
+  key = tenantKey(key);
   const hit = store.get(key);
   if (!hit) return null;
   if (now - hit.createdAt > PENDING_TTL_MS) {
@@ -55,7 +59,7 @@ export function getPendingAction(key: string, now: number = Date.now()): Pending
 }
 
 export function clearPendingAction(key: string): void {
-  if (key) store.delete(key);
+  if (key) store.delete(tenantKey(key));
 }
 
 export function _clearAllPendingActions(): void {

@@ -5,6 +5,7 @@
 import jwt from "jsonwebtoken";
 import type { Request } from "express";
 import type { MayaAudience } from "./audience.js";
+import { inboundJwtSecret } from "../lib/serviceToken.js";
 
 export const MAYA_CONTEXT_HEADER = "x-maya-context";
 
@@ -26,7 +27,7 @@ export const PUBLIC_CONTEXT: MayaContext = Object.freeze({ verified: false, audi
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-export function verifyMayaContext(token: string | undefined | null, secret: string | undefined = process.env.JWT_SECRET): MayaContext {
+export function verifyMayaContext(token: string | undefined | null, secret: string | undefined = inboundJwtSecret()): MayaContext {
   if (!token || !secret) return PUBLIC_CONTEXT;
   let p: Record<string, unknown>;
   try {

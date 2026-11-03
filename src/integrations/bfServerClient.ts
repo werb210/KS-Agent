@@ -9,6 +9,7 @@
 import { signServiceToken, logBFServerAuthFailure, serviceTokenSecret } from "../lib/serviceToken.js";
 import { currentStaffScope } from "../lib/staffScope.js";
 import { MAYA_CONTEXT_HEADER } from "../maya/context.js";
+import { brokerageValue, tenantHeaders } from "../tenancy/context.js";
 
 // AGENT_v789_TIMEOUTS - a BF-Server call never holds a Maya request open for long.
 const BF_SERVER_TIMEOUT_MS = 8_000;
@@ -44,7 +45,7 @@ function getAgentToken(): string {
   // talk-to-a-human handoff, staff presence) was refused and escalate.to_human
   // returned ok:false. The same handoff with a freshly minted token returns 200.
   // Mint whenever JWT_SECRET is available; the explicit token is only a fallback.
-  const explicit = process.env.AGENT_API_TOKEN;
+  const explicit = brokerageValue("AGENT_API_TOKEN");
   if (!secret) return explicit && explicit !== "test_token" ? explicit : "";
   return signServiceToken();
 }
@@ -62,6 +63,9 @@ export async function callBFServer<T>(
 ): Promise<T> {
   const baseUrl = getBaseUrl();
   const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
+  // KS_SHARED_HOSTING_v1 - on the shared agent every call names its brokerage (and throws no_brokerage_context
+  // outside one); the token below is signed with that brokerage's JWT_SECRET.
+  const brokerage = tenantHeaders();
   const token = getAgentToken();
 
   const hasExplicitOptions =
@@ -94,6 +98,7 @@ export async function callBFServer<T>(
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...contextHeader,
+      ...brokerage,
     },
     ...(requestBody !== undefined
       ? { body: JSON.stringify(requestBody) }

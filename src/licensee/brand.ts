@@ -6,6 +6,11 @@
 // loaded, so they never wait on the network. Before the first load (or when the server cannot be reached) the
 // KS_COMPANY_NAME / KS_ASSISTANT_NAME / KS_SUPPORT_EMAIL / KS_SUPPORT_PHONE / CLIENT_URL settings apply, then neutral
 // defaults. No name or number in this file belongs to any particular company.
+//
+// KS_SHARED_HOSTING_v1 - on the shared agent the loaded values are kept per brokerage (keyed by its code), loaded the
+// first time that brokerage is seen (ensureLicenseeLoaded) and refreshed in the background after 5 minutes; the load
+// carries X-KS-Tenant. Single-brokerage mode keeps one entry under "" and the startup/5-minute refresh as before.
+import { tenantCode, tenantHeaders } from "../tenancy/context.js";
 
 export type LicenseeUrls = { server: string; portal: string; client: string; website: string };
 
@@ -26,7 +31,8 @@ export const DEFAULT_COMPANY_REF = "our company";
 
 const EMPTY_URLS: LicenseeUrls = { server: "", portal: "", client: "", website: "" };
 
-let loaded: { at: number; value: Licensee } | null = null;
+const loadedByTenant = new Map<string, { at: number; value: Licensee }>();
+const current = (): { at: number; value: Licensee } | undefined => loadedByTenant.get(tenantCode());
 
 const clean = (v: unknown, max = 200): string => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const cleanUrl = (v: unknown): string => {
@@ -59,12 +65,19 @@ export function parseLicensee(body: unknown): Licensee | null {
 
 /** The values last loaded from the server, or null before the first successful load. */
 export function loadedLicensee(): Licensee | null {
-  return loaded?.value ?? null;
+  return current()?.value ?? null;
 }
 
 /** Test hook and manual override: set (or with null, forget) the loaded values. */
 export function setLicensee(value: Licensee | null, at = Date.now()): void {
-  loaded = value ? { at, value } : null;
+  if (value) loadedByTenant.set(tenantCode(), { at, value });
+  else loadedByTenant.delete(tenantCode());
+}
+
+/** Test hook: forget every brokerage's loaded values. */
+export function _clearAllLicensees(): void {
+  loadedByTenant.clear();
+  lastAttempt.clear();
 }
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -79,7 +92,7 @@ export async function refreshLicensee(env: NodeJS.ProcessEnv = process.env, fetc
   try {
     const res = await fetchImpl(`${base}/api/licensee`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...tenantHeaders() },
       signal: AbortSignal.timeout(LICENSEE_TIMEOUT_MS),
     });
     if (!res.ok) {
@@ -111,11 +124,35 @@ export function startLicenseeRefresh(
   return { stop: () => clearInterval(timer), ready };
 }
 
+const loading = new Map<string, Promise<Licensee | null>>();
+const lastAttempt = new Map<string, number>();
+/** After a failed first load, requests for the next 30 seconds do not wait on another attempt. */
+const FIRST_LOAD_RETRY_MS = 30_000;
+
+/**
+ * KS_SHARED_HOSTING_v1 - for the current brokerage: waits for the first load (bounded by the 5-second timeout), and
+ * after that starts a background refresh whenever the values are older than 5 minutes. Never throws.
+ */
+export async function ensureLicenseeLoaded(now: number = Date.now(), fetchImpl: FetchLike = fetch): Promise<void> {
+  const code = tenantCode();
+  const hit = loadedByTenant.get(code);
+  if (hit && now - hit.at < LICENSEE_REFRESH_MS) return;
+  const recentlyTried = now - (lastAttempt.get(code) ?? 0) < FIRST_LOAD_RETRY_MS;
+  let p = loading.get(code);
+  if (!p) {
+    if (recentlyTried) return;
+    lastAttempt.set(code, now);
+    p = refreshLicensee(process.env, fetchImpl).finally(() => loading.delete(code));
+    loading.set(code, p);
+  }
+  if (!hit) await p;
+}
+
 const envValue = (name: string, env: NodeJS.ProcessEnv = process.env): string => clean(env[name]);
 
 /** The licensee's trading name, or "" when neither the server nor KS_COMPANY_NAME gives one. */
 export function companyNameOrEmpty(env: NodeJS.ProcessEnv = process.env): string {
-  return loaded?.value.company_name || envValue("KS_COMPANY_NAME", env);
+  return current()?.value.company_name || envValue("KS_COMPANY_NAME", env);
 }
 
 /** The licensee's trading name for sentences; "our company" when none is known. Never empty. */
@@ -125,37 +162,37 @@ export function companyName(env: NodeJS.ProcessEnv = process.env): string {
 
 /** The assistant's name: the server's, else KS_ASSISTANT_NAME, else "Assistant". Never empty. */
 export function assistantName(env: NodeJS.ProcessEnv = process.env): string {
-  return loaded?.value.assistant_name || envValue("KS_ASSISTANT_NAME", env) || DEFAULT_ASSISTANT_NAME;
+  return current()?.value.assistant_name || envValue("KS_ASSISTANT_NAME", env) || DEFAULT_ASSISTANT_NAME;
 }
 
 /** The support email, or "" when the licensee has not set one. */
 export function supportEmail(env: NodeJS.ProcessEnv = process.env): string {
-  return loaded?.value.support_email || envValue("KS_SUPPORT_EMAIL", env);
+  return current()?.value.support_email || envValue("KS_SUPPORT_EMAIL", env);
 }
 
 /** The support phone as entered, or "" when the licensee has not set one. */
 export function supportPhone(env: NodeJS.ProcessEnv = process.env): string {
-  return loaded?.value.support_phone || envValue("KS_SUPPORT_PHONE", env);
+  return current()?.value.support_phone || envValue("KS_SUPPORT_PHONE", env);
 }
 
 /** The licensee's mailing address on one line, or "". */
 export function mailingAddress(): string {
-  return loaded?.value.mailing_address ?? "";
+  return current()?.value.mailing_address ?? "";
 }
 
 /** The client app's address (where applications start): the server's urls.client, else CLIENT_URL, else "". */
 export function clientAppUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return loaded?.value.urls.client || cleanUrl(env.CLIENT_URL);
+  return current()?.value.urls.client || cleanUrl(env.CLIENT_URL);
 }
 
 /** The licensee's public website address, or "". */
 export function websiteUrl(): string {
-  return loaded?.value.urls.website ?? "";
+  return current()?.value.urls.website ?? "";
 }
 
 /** The licensee's app addresses as last loaded (empty strings when unknown). */
 export function licenseeUrls(): LicenseeUrls {
-  return loaded?.value.urls ?? { ...EMPTY_URLS };
+  return current()?.value.urls ?? { ...EMPTY_URLS };
 }
 
 /** "call 1-800-555-0100 or email help@acme.example" / "call ..." / "email ..." / "" - whichever contacts are set. */

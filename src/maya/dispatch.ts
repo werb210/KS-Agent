@@ -14,6 +14,7 @@ import {
   CONFIRM_TOOL, confirmAvailable, getPendingAction, clearPendingAction, storePendingAction,
 } from "./pendingActions.js";
 import { claimHandoff, finishHandoff, getProvidedContact, rememberProvidedContact } from "./handoff.js";
+import { tenantKey } from "../tenancy/context.js"; // KS_SHARED_HOSTING_v1 - per-brokerage keys
 
 // AGENT_BLOCK_v328_MAYA_FAILSAFE_v1
 export type DispatchContext = {
@@ -64,11 +65,12 @@ const RESOLVED_TTL_MS = 60 * 60 * 1000;
 
 export function rememberResolvedApplicationId(key: string, id: string): void {
   if (!key || !id) return;
-  resolvedAppIds.set(key, { id, at: Date.now() });
+  resolvedAppIds.set(tenantKey(key), { id, at: Date.now() });
 }
 
 export function getResolvedApplicationId(key: string): string | null {
   if (!key) return null;
+  key = tenantKey(key); // KS_SHARED_HOSTING_v1
   const hit = resolvedAppIds.get(key);
   if (!hit) return null;
   if (Date.now() - hit.at > RESOLVED_TTL_MS) {

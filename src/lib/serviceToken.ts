@@ -4,6 +4,7 @@
 // agent's credential can be rotated apart from the user-session secret), else JWT_SECRET,
 // and scoped with iss "agent" / aud "bf-server".
 import jwt from "jsonwebtoken";
+import { brokerageValue } from "../tenancy/context.js";
 
 export const SERVICE_TOKEN_CLAIMS = {
   kind: "service",
@@ -17,12 +18,21 @@ export const SERVICE_TOKEN_CLAIMS = {
 export const SERVICE_TOKEN_ISSUER = "agent";
 export const SERVICE_TOKEN_AUDIENCE = "bf-server";
 
-/** The secret outbound service tokens are signed with. */
+/**
+ * The secret outbound service tokens are signed with. KS_SHARED_HOSTING_v1 - on the shared agent, the current
+ * brokerage's AGENT_SERVICE_JWT_SECRET / JWT_SECRET (from its env_enc), never the shared app's own, and none at all
+ * outside a brokerage's request.
+ */
 export function serviceTokenSecret(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const dedicated = env.AGENT_SERVICE_JWT_SECRET?.trim();
+  const dedicated = brokerageValue("AGENT_SERVICE_JWT_SECRET", env)?.trim();
   if (dedicated) return dedicated;
-  const shared = env.JWT_SECRET?.trim();
+  const shared = brokerageValue("JWT_SECRET", env)?.trim();
   return shared || undefined;
+}
+
+/** The JWT_SECRET KS-server signs X-Maya-Context and its own service tokens with (per brokerage when shared). */
+export function inboundJwtSecret(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return brokerageValue("JWT_SECRET", env) || undefined;
 }
 
 export function signServiceToken(secret: string | undefined = serviceTokenSecret()): string {
@@ -40,7 +50,7 @@ export function signServiceToken(secret: string | undefined = serviceTokenSecret
  * A token the agent itself minted for BF-Server (aud "bf-server") is refused, so one the
  * agent sent out cannot be replayed back at it.
  */
-export function isValidServiceToken(token: string | undefined | null, secret: string | undefined = process.env.JWT_SECRET): boolean {
+export function isValidServiceToken(token: string | undefined | null, secret: string | undefined = inboundJwtSecret()): boolean {
   if (!token || !secret) return false;
   try {
     const p = jwt.verify(token, secret, { algorithms: ["HS256"] }) as Record<string, unknown>;

@@ -21,6 +21,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.6.0",
+    "@types/pg": "^8.23.1",
     "eslint": "9.39.5",
     "globals": "17.12.0",
     "typescript": "^6.0.3",
@@ -30,7 +31,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "express-rate-limit": "^7.5.1",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1"
   },
   "overrides": {
     "proxy-addr": "^2.0.8",
@@ -47,6 +49,6 @@
     "nanoid": "3.3.19",
     "source-map-js": "1.2.2"
   },
-  "description": "Keystone AI assistant service: one per licensee, named and branded from its KS-server.",
+  "description": "Keystone AI assistant service: one shared app for every brokerage (or one per brokerage in single-brokerage mode), named and branded from KS-server.",
   "private": true
 }
