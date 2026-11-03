@@ -1,3 +1,4 @@
+import { tenantKey } from "../tenancy/context.js";
 // AGENT_BLOCK_v83_MAYA_SESSION_MEMORY_v1
 // AGENT_v789_SESSION_KEY - callers pass sessionKey(audience, subject, sessionId), never a raw session id.
 type Role = "user" | "assistant";
@@ -18,6 +19,7 @@ function evictIfNeeded(now: number): void {
 }
 export function getSessionHistory(key: string): HistoryMessage[] {
   if (!key) return [];
+  key = tenantKey(key); // KS_SHARED_HOSTING_v1 - one brokerage never sees another's history
   const e = store.get(key);
   if (!e) return [];
   if (isExpired(e, Date.now())) { store.delete(key); return []; }
@@ -28,6 +30,7 @@ export function getSessionHistory(key: string): HistoryMessage[] {
 export const MAX_HISTORY_ENTRY_CHARS = 2_000;
 export function appendSessionTurn(key: string, userMessage: string, assistantReply: string): void {
   if (!key) return;
+  key = tenantKey(key);
   userMessage = typeof userMessage === "string" ? userMessage.slice(0, MAX_HISTORY_ENTRY_CHARS) : "";
   assistantReply = typeof assistantReply === "string" ? assistantReply.slice(0, MAX_HISTORY_ENTRY_CHARS) : "";
   const now = Date.now();

@@ -5,10 +5,15 @@ name: Build and deploy the assistant to Azure Web App
 # repository settings (the job is skipped while AZURE_WEBAPP_NAME is empty):
 #   secrets.AZURE_CREDENTIALS    service principal (az ad sp create-for-rbac --sdk-auth) limited to the dev group
 #   vars.AZURE_WEBAPP_NAME       the Web App to deploy to (e.g. ks-agent-dev)
-# KS_LICENSEE_DEPLOY_v1 - each licensee runs its own agent next to its own KS-server; the licensee-* jobs below deploy
-# to every licensee in deploy/licensees.json, with settings from its GitHub environment (normally ks-<code>).
-# App settings on the Web App (not here): SERVER_URL, JWT_SECRET (same as KS-server), OPENAI_API_KEY,
+# KS_SHARED_HOSTING_v1 - every brokerage is served by ONE shared assistant (ks-shared-agent, next to ks-shared-server);
+# the shared-deploy job below deploys it once. There is no per-brokerage matrix any more: each brokerage's settings
+# live in the ks_control registry, not in GitHub. deploy/licensees.json stays (CI still validates it) as the list of
+# brokerages whose web builds are published.
+# App settings on the development Web App (not here): SERVER_URL, JWT_SECRET (same as KS-server), OPENAI_API_KEY,
 # SCM_DO_BUILD_DURING_DEPLOYMENT=false. App Service sets PORT.
+# App settings on the shared Web App: SERVER_URL (the shared server), OPENAI_API_KEY, KS_CONTROL_DATABASE_URL
+# (role ks_control_reader), KS_TENANT_KEY, SCM_DO_BUILD_DURING_DEPLOYMENT=false. No JWT_SECRET: each brokerage's
+# comes from its env_enc.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -16,13 +21,12 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      licensee:
-        description: >-
-          Only this licensee (its code in deploy/licensees.json, e.g. northwind). Empty deploys the development copy
-          and every enabled licensee.
+      target:
+        description: What to deploy
         required: false
-        default: ''
-        type: string
+        default: all
+        type: choice
+        options: [all, development, shared]
 
 concurrency:
   group: deploy-ks-agent
@@ -32,10 +36,10 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-24.04
     # No assistant Web App yet (AZURE_WEBAPP_NAME unset): skip instead of failing every push.
-    # KS_LICENSEE_DEPLOY_v1 - a manual run for one licensee leaves the development copy alone.
+    # KS_SHARED_HOSTING_v1 - a manual run for the shared app only leaves the development copy alone.
     if: >-
       vars.AZURE_WEBAPP_NAME != '' && (
-      (github.event_name == 'workflow_dispatch' && inputs.licensee == '') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target != 'shared') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push'))
 
@@ -91,159 +95,100 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           package: release.zip
 
-  # KS_LICENSEE_DEPLOY_v1 - every licensee's own assistant (resource group ks-<code>). deploy/licensees.json lists the
-  # licensees; each one's settings live in its GitHub environment (normally ks-<code>, Settings > Environments):
-  #   secret   AZURE_CREDENTIALS   service principal limited to ks-<code> (provision-licensee.sh CREATE_DEPLOY_SP=1)
-  #   variable AZURE_WEBAPP_NAME   optional; default ks-<code>-agent
-  # Separate jobs from the development deploy above, so neither blocks the other, and one licensee failing never
-  # stops the rest (fail-fast: false).
-  licensee-plan:
+  # KS_SHARED_HOSTING_v1 - the one shared assistant for every brokerage (resource group ks-shared). Settings:
+  #   variable AZURE_WEBAPP_NAME_SHARED   optional; default ks-shared-agent
+  #   sign-in, either
+  #     variables AZURE_SHARED_CLIENT_ID + AZURE_SHARED_TENANT_ID + AZURE_SHARED_SUBSCRIPTION_ID   a deploy identity
+  #               with a federated credential for this repository's main branch (no secret), or
+  #     secret    AZURE_CREDENTIALS_SHARED   a service principal's JSON limited to ks-shared
+  # Its own sign-in, never the development copy's AZURE_CREDENTIALS. Until one is set the job says so and skips the
+  # deploy instead of failing every push. Separate from the development deploy above, so neither blocks the other.
+  shared-deploy:
     runs-on: ubuntu-24.04
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target != 'development') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
-    outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      count: ${{ steps.plan.outputs.count }}
-      repo_credentials: ${{ steps.repo.outputs.credentials }}
-      repo_webapp_name: ${{ steps.repo.outputs.webapp_name }}
-      repo_client_id: ${{ steps.repo.outputs.client_id }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-ks-agent-shared
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-
-      - name: Licensees to deploy
-        id: plan
+      - name: Check the shared app's settings
+        id: settings
         env:
-          WANTED: ${{ inputs.licensee }}
-        run: node deploy/licensee-matrix.mjs agent "$WANTED"
-
-      # A licensee environment without its own value silently gets the repository's (the development copy's).
-      # Fingerprints let each licensee job notice that without the secret itself leaving this job.
-      - name: Repository-level settings (to tell them apart from a licensee's)
-        id: repo
-        env:
-          REPO_AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-          REPO_AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
-          REPO_AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_WEBAPP_NAME_SHARED: ${{ vars.AZURE_WEBAPP_NAME_SHARED }}
+          AZURE_SHARED_CLIENT_ID: ${{ vars.AZURE_SHARED_CLIENT_ID }}
+          AZURE_SHARED_TENANT_ID: ${{ vars.AZURE_SHARED_TENANT_ID }}
+          AZURE_SHARED_SUBSCRIPTION_ID: ${{ vars.AZURE_SHARED_SUBSCRIPTION_ID }}
+          AZURE_CREDENTIALS_SHARED: ${{ secrets.AZURE_CREDENTIALS_SHARED }}
         run: |
-          {
-            echo "credentials=$(printf '%s' "$REPO_AZURE_CREDENTIALS" | sha256sum | cut -d' ' -f1)"
-            echo "webapp_name=$REPO_AZURE_WEBAPP_NAME"
-            echo "client_id=$REPO_AZURE_CLIENT_ID"
-          } >> "$GITHUB_OUTPUT"
+          app="${AZURE_WEBAPP_NAME_SHARED:-ks-shared-agent}"
+          echo "webapp=$app" >> "$GITHUB_OUTPUT"
+          if [ -n "$AZURE_SHARED_CLIENT_ID" ] && [ -n "$AZURE_SHARED_TENANT_ID" ] && [ -n "$AZURE_SHARED_SUBSCRIPTION_ID" ]; then
+            echo "login=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "$AZURE_CREDENTIALS_SHARED" ]; then
+            echo "login=creds" >> "$GITHUB_OUTPUT"
+          else
+            echo "login=none" >> "$GITHUB_OUTPUT"
+            echo "::warning title=shared assistant not deployed::Set the variables AZURE_SHARED_CLIENT_ID, AZURE_SHARED_TENANT_ID and AZURE_SHARED_SUBSCRIPTION_ID (or the secret AZURE_CREDENTIALS_SHARED) to deploy $app."
+            exit 0
+          fi
+          echo "Deploying to $app"
 
-  licensee-package:
-    needs: licensee-plan
-    if: needs.licensee-plan.outputs.count != '0'
-    runs-on: ubuntu-24.04
-    steps:
       - uses: actions/checkout@v5
+        if: steps.settings.outputs.login != 'none'
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Use Node
+        if: steps.settings.outputs.login != 'none'
         uses: actions/setup-node@v5
         with:
           node-version: '22.x'
           cache: npm
 
       - name: Install deps
+        if: steps.settings.outputs.login != 'none'
         run: npm ci
 
       - name: Build
+        if: steps.settings.outputs.login != 'none'
         run: npm run build
 
       - name: Verify build
+        if: steps.settings.outputs.login != 'none'
         run: |
           test -f dist/index.js
           node -e "const s=require('fs').statSync('dist/index.js'); if(!s.size){process.exit(1)}"
 
       - name: Prune dev deps
+        if: steps.settings.outputs.login != 'none'
         run: npm prune --omit=dev
 
       - name: Create deployment package
+        if: steps.settings.outputs.login != 'none'
         run: |
           zip -q -r release.zip dist node_modules package.json package-lock.json -x "node_modules/.cache/*"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ks-agent-release
-          path: release.zip
-          retention-days: 1
-
-  licensee-deploy:
-    name: deploy ${{ matrix.code }}
-    needs: [licensee-plan, licensee-package]
-    if: needs.licensee-plan.outputs.count != '0'
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.licensee-plan.outputs.matrix) }}
-    environment: ${{ matrix.environment }}
-    # KS_OPS_AUTO_PROVISION_v1 - id-token lets the job sign in with the licensee's federated deploy identity.
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-    concurrency:
-      group: deploy-ks-agent-${{ matrix.code }}
-      cancel-in-progress: false
-    steps:
-      - name: Check the licensee's settings
-        id: settings
-        env:
-          CODE: ${{ matrix.code }}
-          ENVIRONMENT: ${{ matrix.environment }}
-          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
-          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          REPO_CREDENTIALS: ${{ needs.licensee-plan.outputs.repo_credentials }}
-          REPO_WEBAPP_NAME: ${{ needs.licensee-plan.outputs.repo_webapp_name }}
-          REPO_CLIENT_ID: ${{ needs.licensee-plan.outputs.repo_client_id }}
-        # KS_OPS_AUTO_PROVISION_v1 - two ways to sign in, both from the licensee's own environment (a value inherited
-        # from the repository, i.e. the development copy's, never counts):
-        #   variables AZURE_CLIENT_ID + AZURE_TENANT_ID + AZURE_SUBSCRIPTION_ID  the managed identity ks-<code>-deploy
-        #             with a federated credential for this environment (automatic provisioning; no secret)
-        #   secret    AZURE_CREDENTIALS                                          a service principal's JSON (by hand)
-        run: |
-          if [ -n "$AZURE_CLIENT_ID" ] && [ "$AZURE_CLIENT_ID" != "$REPO_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ]; then
-            echo "login=oidc" >> "$GITHUB_OUTPUT"
-          elif [ -n "$AZURE_CREDENTIALS" ] &&
-               [ "$(printf '%s' "$AZURE_CREDENTIALS" | sha256sum | cut -d' ' -f1)" != "$REPO_CREDENTIALS" ]; then
-            echo "login=creds" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error title=$CODE::Add to the GitHub environment '$ENVIRONMENT' the variables AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID (the licensee's deploy identity) or the secret AZURE_CREDENTIALS (its deploy service principal)."
-            exit 1
-          fi
-          app="$AZURE_WEBAPP_NAME"
-          if [ -z "$app" ] || [ "$app" = "$REPO_WEBAPP_NAME" ]; then app="ks-$CODE-agent"; fi
-          echo "webapp=$app" >> "$GITHUB_OUTPUT"
-          echo "Deploying to $app"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: ks-agent-release
 
       - name: Azure Login (federated deploy identity)
         if: steps.settings.outputs.login == 'oidc'
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_SHARED_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_SHARED_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SHARED_SUBSCRIPTION_ID }}
 
       - name: Azure Login
         if: steps.settings.outputs.login == 'creds'
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS_SHARED }}
 
       - name: Deploy to Azure
+        if: steps.settings.outputs.login != 'none'
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ steps.settings.outputs.webapp }}

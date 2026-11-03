@@ -6,6 +6,9 @@
 //     waitlist.join). Those are unverified: they ride along as provided_contact for a
 //     person to read, and are never used to match an existing contact or application.
 
+// KS_SHARED_HOSTING_v1 - both stores are keyed per brokerage (tenantKey).
+import { tenantKey } from "../tenancy/context.js";
+
 export const HANDOFF_WINDOW_MS = 10 * 60 * 1000;
 
 type HandoffRecord = { at: number; ok: boolean | null };
@@ -18,6 +21,7 @@ export type HandoffClaim =
 /** Claim the session's handoff slot. Release it with finishHandoff(key, false) if the handoff failed. */
 export function claimHandoff(key: string, now: number = Date.now()): HandoffClaim {
   if (!key) return { allowed: true };
+  key = tenantKey(key);
   const prev = handoffs.get(key);
   if (prev && now - prev.at < HANDOFF_WINDOW_MS) return { allowed: false, previousOk: prev.ok, at: prev.at };
   handoffs.set(key, { at: now, ok: null });
@@ -26,6 +30,7 @@ export function claimHandoff(key: string, now: number = Date.now()): HandoffClai
 
 export function finishHandoff(key: string, ok: boolean): void {
   if (!key) return;
+  key = tenantKey(key);
   if (!ok) {
     // A failed handoff does not use up the window; the visitor can try again.
     handoffs.delete(key);
@@ -44,7 +49,7 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? 
 export function rememberProvidedContact(key: string, contact: Partial<ProvidedContact>): void {
   if (!key) return;
   const prev = getProvidedContact(key);
-  provided.set(key, {
+  provided.set(tenantKey(key), {
     name: str(contact.name) ?? prev.name,
     phone: str(contact.phone) ?? prev.phone,
     email: str(contact.email) ?? prev.email,
@@ -53,7 +58,7 @@ export function rememberProvidedContact(key: string, contact: Partial<ProvidedCo
 }
 
 export function getProvidedContact(key: string): ProvidedContact {
-  const hit = key ? provided.get(key) : undefined;
+  const hit = key ? provided.get(tenantKey(key)) : undefined;
   if (!hit || Date.now() - hit.at > CONTACT_TTL_MS) return { name: null, phone: null, email: null };
   return { name: hit.name, phone: hit.phone, email: hit.email };
 }

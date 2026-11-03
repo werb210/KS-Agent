@@ -7,7 +7,9 @@ import { mayaRouter } from "./api/maya.js";
 import { rateLimit } from "express-rate-limit";
 import { MAYA_CONTEXT_HEADER, verifyMayaContext } from "./maya/context.js";
 import { isValidServiceToken } from "./lib/serviceToken.js";
-import { licenseeUrls } from "./licensee/brand.js";
+import { ensureLicenseeLoaded, licenseeUrls } from "./licensee/brand.js";
+import { isMultiBrokerage, tenantCode } from "./tenancy/context.js";
+import { tenantMiddleware } from "./tenancy/middleware.js";
 
 // AGENT_BLOCK_v20_BOOT_CONFIG_AUDIT_v1
 // The assistant degrades to a human handoff when any of these are missing
@@ -20,10 +22,15 @@ export const REQUIRED_ENV = [
   "JWT_SECRET",
 ] as const;
 
+// KS_SHARED_HOSTING_v1 - the shared agent has no JWT_SECRET of its own (each brokerage's is in its env_enc); it needs
+// the registry and the key that decrypts it instead.
+export const REQUIRED_ENV_SHARED = ["OPENAI_API_KEY", "SERVER_URL", "KS_CONTROL_DATABASE_URL", "KS_TENANT_KEY"] as const;
+
 const healthCache = new Map<string, number>();
 
 export function auditRequiredEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-  const missing = REQUIRED_ENV.filter((key) => !env[key]?.trim());
+  const required: readonly string[] = isMultiBrokerage(env) ? REQUIRED_ENV_SHARED : REQUIRED_ENV;
+  const missing = required.filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
     console.error(JSON.stringify({ missing, msg: "agent_boot_missing_env" }));
   }
@@ -142,6 +149,10 @@ export function createApp(options: AppDeps = {}) {
   app.set("trust proxy", 1);
   app.use(express.json());
 
+  // KS_SHARED_HOSTING_v1 - multi-brokerage mode: find the request's brokerage (X-KS-Tenant, then Host) and run the rest
+  // of the request inside it; its names are loaded on first use. Does nothing in single-brokerage mode.
+  app.use(tenantMiddleware({ onTenant: () => ensureLicenseeLoaded() }));
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId = req.header("x-request-id") || randomUUID();
     const startedAt = Date.now();
@@ -169,7 +180,7 @@ export function createApp(options: AppDeps = {}) {
     }
 
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-request-id, x-maya-context");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-request-id, x-maya-context, x-ks-tenant");
 
     res.on("finish", () => {
       console.log(
@@ -199,6 +210,8 @@ export function createApp(options: AppDeps = {}) {
     standardHeaders: "draft-7",
     legacyHeaders: false,
     skip: (req) => hasTrustedCredential(req),
+    // KS_SHARED_HOSTING_v1 - per brokerage and IP, so callers of one brokerage never use up another's allowance.
+    keyGenerator: (req) => `${tenantCode()}|${req.ip ?? ""}`,
     message: { status: "error", error: "rate_limited" },
   });
   app.use((req: Request, res: Response, next: NextFunction) => {

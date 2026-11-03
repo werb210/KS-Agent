@@ -14,8 +14,12 @@ export const DEFAULT_SESSION_DAILY_TOKEN_BUDGET = 2_000_000; // MAYA_v817 - was 
 export const SESSION_DAILY_TOKEN_BUDGET = DEFAULT_SESSION_DAILY_TOKEN_BUDGET;
 const MAX_TRACKED_SESSIONS = 20_000;
 
+// KS_SHARED_HOSTING_v1 - on the shared agent the "global" budget is per brokerage (one brokerage cannot use up
+// another's day) and session keys carry the brokerage code. Single-brokerage mode keeps one budget under "".
+import { tenantCode, tenantKey } from "../tenancy/context.js";
+
 let day = "";
-let globalUsed = 0;
+const globalUsed = new Map<string, number>();
 const perSession = new Map<string, number>();
 
 function today(now: number): string {
@@ -26,7 +30,7 @@ function roll(now: number): void {
   const d = today(now);
   if (d !== day) {
     day = d;
-    globalUsed = 0;
+    globalUsed.clear();
     perSession.clear();
   }
 }
@@ -46,7 +50,8 @@ export type BudgetCheck = { ok: true } | { ok: false; scope: "global" | "session
 
 export function checkBudget(sessionKey: string, now: number = Date.now()): BudgetCheck {
   roll(now);
-  if (globalUsed >= dailyTokenBudget()) return { ok: false, scope: "global" };
+  sessionKey = tenantKey(sessionKey);
+  if ((globalUsed.get(tenantCode()) ?? 0) >= dailyTokenBudget()) return { ok: false, scope: "global" };
   if (sessionKey && (perSession.get(sessionKey) ?? 0) >= sessionDailyTokenBudget()) return { ok: false, scope: "session" };
   return { ok: true };
 }
@@ -56,8 +61,10 @@ export function checkBudget(sessionKey: string, now: number = Date.now()): Budge
 export function recordUsage(sessionKey: string, tokens: number, now: number = Date.now(), sessionTokens: number = tokens): void {
   if (!Number.isFinite(tokens) || tokens <= 0) return;
   roll(now);
-  globalUsed += tokens;
+  const code = tenantCode();
+  globalUsed.set(code, (globalUsed.get(code) ?? 0) + tokens);
   if (!sessionKey) return;
+  sessionKey = tenantKey(sessionKey);
   if (!Number.isFinite(sessionTokens) || sessionTokens < 0) sessionTokens = tokens;
   if (!perSession.has(sessionKey) && perSession.size >= MAX_TRACKED_SESSIONS) {
     const oldest = perSession.keys().next().value;
@@ -89,6 +96,6 @@ export function sessionTokensUsed(response: unknown, requestBody: unknown): numb
 
 export function _resetTokenBudgets(): void {
   day = "";
-  globalUsed = 0;
+  globalUsed.clear();
   perSession.clear();
 }

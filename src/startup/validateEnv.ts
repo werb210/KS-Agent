@@ -21,15 +21,22 @@ const OPTIONAL_ENV_VARS = [
   "DATABASE_URL",
 ] as const;
 
+// KS_SHARED_HOSTING_v1 - the shared agent (KS_CONTROL_DATABASE_URL set) takes JWT_SECRET per brokerage from the
+// registry, and needs the registry and its key instead.
+const REQUIRED_ENV_VARS_SHARED = ["PORT", "SERVER_URL", "OPENAI_API_KEY", "KS_CONTROL_DATABASE_URL", "KS_TENANT_KEY"] as const;
+
 export function validateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidationStatus {
+  const shared = Boolean(env.KS_CONTROL_DATABASE_URL?.trim());
   if (env.NODE_ENV === "production") {
     // KS_AGENT_v1_CONFIG - the settings the agent needs (PORT is set by App Service); SMS goes through the
     // licensee's server, so no Twilio settings are needed here.
-    const required = [
-      "SERVER_URL",
-      "OPENAI_API_KEY",
-      "JWT_SECRET",
-    ] as const;
+    const required = shared
+      ? (["SERVER_URL", "OPENAI_API_KEY", "KS_TENANT_KEY"] as const)
+      : ([
+        "SERVER_URL",
+        "OPENAI_API_KEY",
+        "JWT_SECRET",
+      ] as const);
 
     // AGENT_BLOCK_v86_ENV_DEGRADE_NOT_CRASH_v1 — previously threw on any
     // missing prod var, crash-looping the whole service (health endpoint dead
@@ -49,7 +56,7 @@ export function validateEnv(env: NodeJS.ProcessEnv = process.env): EnvValidation
     // AGENT_SERVICE_JWT_SECRET or JWT_SECRET (src/lib/serviceToken.ts), so no warning for it.
   }
 
-  const missingRequired = REQUIRED_ENV_VARS.filter((key) => !env[key]);
+  const missingRequired = (shared ? REQUIRED_ENV_VARS_SHARED : REQUIRED_ENV_VARS).filter((key) => !env[key]);
   const missingOptional = OPTIONAL_ENV_VARS.filter((key) => !env[key]);
   const valid = missingRequired.length === 0;
 

@@ -4,6 +4,7 @@ import { getSessionHistory, appendSessionTurn } from "../maya/sessionHistory.js"
 import { signServiceToken, logBFServerAuthFailure } from "../lib/serviceToken.js";
 import { mayaContextFromRequest, MAYA_CONTEXT_HEADER } from "../maya/context.js";
 import { LENDING_SILO } from "../lib/staffScope.js";
+import { tenantHeaders } from "../tenancy/context.js"; // KS_SHARED_HOSTING_v1
 import { sessionKey } from "../maya/sessionKey.js";
 import { checkBudget, recordUsage, tokensUsed, sessionTokensUsed } from "../maya/tokenBudget.js";
 import { confirmAvailable } from "../maya/pendingActions.js";
@@ -71,6 +72,8 @@ async function bfServer(path: string, init: RequestInit = {}, timeoutMs = 8_000)
   // KS_AGENT_v1_CONFIG - the licensee's own server; there is no default address.
   const base = (process.env.SERVER_URL || process.env.BASE_URL || "").replace(/\/+$/, "");
   if (!base) throw new Error("SERVER_URL is not configured");
+  // KS_SHARED_HOSTING_v1 - X-KS-Tenant on the shared agent; the token is signed with that brokerage's JWT_SECRET.
+  const brokerage = tenantHeaders();
   const token = signServiceToken();
   const res = await fetch(`${base}${path}`, {
     ...init,
@@ -79,6 +82,7 @@ async function bfServer(path: string, init: RequestInit = {}, timeoutMs = 8_000)
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       ...((init.headers as Record<string, string>) || {}),
+      ...brokerage,
     },
   });
   logBFServerAuthFailure(path, res.status);
