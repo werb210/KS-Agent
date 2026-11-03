@@ -98,13 +98,14 @@ jobs:
   # KS_SHARED_HOSTING_v1 - the one shared assistant for every brokerage (resource group ks-shared). Settings:
   #   variable AZURE_WEBAPP_NAME_SHARED   optional; default ks-shared-agent
   #   sign-in, either
-  #     variables AZURE_SHARED_CLIENT_ID + AZURE_SHARED_TENANT_ID + AZURE_SHARED_SUBSCRIPTION_ID   a deploy identity
+  #     variables AZURE_CLIENT_ID + AZURE_TENANT_ID + AZURE_SUBSCRIPTION_ID   a deploy identity
   #               with a federated credential for this repository's main branch (no secret), or
-  #     secret    AZURE_CREDENTIALS_SHARED   a service principal's JSON limited to ks-shared
-  # Its own sign-in, never the development copy's AZURE_CREDENTIALS. Until one is set the job says so and skips the
+  #     secret    AZURE_CREDENTIALS   a service principal's JSON limited to ks-shared
+  # All of these live in the GitHub environment 'ks-shared' (same names as KS-server and KS-Ops). Until one is set the job says so and skips the
   # deploy instead of failing every push. Separate from the development deploy above, so neither blocks the other.
   shared-deploy:
     runs-on: ubuntu-24.04
+    environment: ks-shared
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.target != 'development') ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -120,20 +121,20 @@ jobs:
         id: settings
         env:
           AZURE_WEBAPP_NAME_SHARED: ${{ vars.AZURE_WEBAPP_NAME_SHARED }}
-          AZURE_SHARED_CLIENT_ID: ${{ vars.AZURE_SHARED_CLIENT_ID }}
-          AZURE_SHARED_TENANT_ID: ${{ vars.AZURE_SHARED_TENANT_ID }}
-          AZURE_SHARED_SUBSCRIPTION_ID: ${{ vars.AZURE_SHARED_SUBSCRIPTION_ID }}
-          AZURE_CREDENTIALS_SHARED: ${{ secrets.AZURE_CREDENTIALS_SHARED }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
         run: |
           app="${AZURE_WEBAPP_NAME_SHARED:-ks-shared-agent}"
           echo "webapp=$app" >> "$GITHUB_OUTPUT"
-          if [ -n "$AZURE_SHARED_CLIENT_ID" ] && [ -n "$AZURE_SHARED_TENANT_ID" ] && [ -n "$AZURE_SHARED_SUBSCRIPTION_ID" ]; then
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ]; then
             echo "login=oidc" >> "$GITHUB_OUTPUT"
-          elif [ -n "$AZURE_CREDENTIALS_SHARED" ]; then
+          elif [ -n "$AZURE_CREDENTIALS" ]; then
             echo "login=creds" >> "$GITHUB_OUTPUT"
           else
             echo "login=none" >> "$GITHUB_OUTPUT"
-            echo "::warning title=shared assistant not deployed::Set the variables AZURE_SHARED_CLIENT_ID, AZURE_SHARED_TENANT_ID and AZURE_SHARED_SUBSCRIPTION_ID (or the secret AZURE_CREDENTIALS_SHARED) to deploy $app."
+            echo "::warning title=shared assistant not deployed::Set the variables AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID (or the secret AZURE_CREDENTIALS) to deploy $app."
             exit 0
           fi
           echo "Deploying to $app"
@@ -177,15 +178,15 @@ jobs:
         if: steps.settings.outputs.login == 'oidc'
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_SHARED_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_SHARED_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SHARED_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Azure Login
         if: steps.settings.outputs.login == 'creds'
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_SHARED }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure
         if: steps.settings.outputs.login != 'none'

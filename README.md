@@ -62,8 +62,8 @@ npm run build && npm start
 
 - the development copy: `AZURE_CREDENTIALS` secret and `AZURE_WEBAPP_NAME` variable (skipped while that is empty);
 - the one shared app: `AZURE_WEBAPP_NAME_SHARED` variable (default `ks-shared-agent`), signed in with
-  `AZURE_SHARED_CLIENT_ID` + `AZURE_SHARED_TENANT_ID` + `AZURE_SHARED_SUBSCRIPTION_ID` (federated identity) or the
-  `AZURE_CREDENTIALS_SHARED` secret (skipped with a warning while neither is set).
+  `AZURE_CLIENT_ID` + `AZURE_TENANT_ID` + `AZURE_SUBSCRIPTION_ID` (federated identity) or the
+  `AZURE_CREDENTIALS (in the GitHub environment ks-shared)` secret (skipped with a warning while neither is set).
 
 There is no per-brokerage deploy any more; `deploy/licensees.json` is kept (and checked in CI) as the list of
 brokerages whose web builds are published.
