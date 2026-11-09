@@ -62,6 +62,12 @@ import {
   docsRequestDraft, DOCS_REQUEST_DRAFT_TOOL_DESCRIPTOR,
   dailyBriefing, DAILY_BRIEFING_TOOL_DESCRIPTOR,
 } from "./tools/staffReadTools2.js";
+// KS_AGENT_CUSTOM_EVERYWHERE_v1
+import {
+  crmProperties, CRM_PROPERTIES_TOOL_DESCRIPTOR,
+  crmFindByProperty, CRM_FIND_BY_PROPERTY_TOOL_DESCRIPTOR,
+  pipelinesOverview, PIPELINES_OVERVIEW_TOOL_DESCRIPTOR,
+} from "./tools/customFieldTools.js";
 // AGENT_MAYA_INSIGHTS_v657
 import {
   adsPerformance, ADS_PERFORMANCE_TOOL_DESCRIPTOR,
@@ -145,6 +151,10 @@ export const TOOL_REGISTRY: Readonly<Record<string, ToolEntry>> = {
   "notes.read": { descriptor: NOTES_READ_TOOL_DESCRIPTOR, run: (a) => notesRead(a) },
   "docs.request_draft": { descriptor: DOCS_REQUEST_DRAFT_TOOL_DESCRIPTOR, run: (a) => docsRequestDraft(a) },
   "daily.briefing": { descriptor: DAILY_BRIEFING_TOOL_DESCRIPTOR, run: (a) => dailyBriefing(a) },
+  // KS_AGENT_CUSTOM_EVERYWHERE_v1
+  "crm.properties": { descriptor: CRM_PROPERTIES_TOOL_DESCRIPTOR, run: (a) => crmProperties(a) },
+  "crm.find_by_property": { descriptor: CRM_FIND_BY_PROPERTY_TOOL_DESCRIPTOR, run: (a) => crmFindByProperty(a) },
+  "pipelines.overview": { descriptor: PIPELINES_OVERVIEW_TOOL_DESCRIPTOR, run: (a) => pipelinesOverview(a) },
   "capital.readiness_check": { descriptor: CAPITAL_READINESS_CHECK_TOOL_DESCRIPTOR, run: (a) => capitalReadinessCheck(a) },
   "prequal.estimate": { descriptor: PREQUAL_ESTIMATE_TOOL_DESCRIPTOR, run: (a) => prequalEstimate(a) },
   "industry.guidance": { descriptor: INDUSTRY_GUIDANCE_TOOL_DESCRIPTOR, run: (a) => industryGuidance(a) },
