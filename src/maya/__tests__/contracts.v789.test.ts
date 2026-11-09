@@ -44,6 +44,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   "ads.negatives.remove": { id: "neg_1" }, "ui.navigate": { target: "pipeline" }, "apply.field_help": { field: "annual revenue" },
   "docs.explain": { document_type: "bank statements" }, "industry.guidance": { industry: "trucking" }, "prequal.estimate": { monthly_revenue: 50000, months_in_business: 24 },
   "capital.readiness_check": { monthly_revenue: 50000, months_in_business: 24 },
+  "crm.find_by_property": { field: "deal_cf_equipment_type", value: "Excavator" }, // KS_AGENT_CUSTOM_EVERYWHERE_v1
 };
 // Tools whose answer is built in the agent (no BF-Server call).
 // MAYA_v817 - forms.field_help answers from the agent (no BF-Server call).

@@ -115,6 +115,10 @@ export const BF_SERVER_FIXTURES: Record<string, unknown> = {
   "/api/maya/staff/crm-notes": { ok: true, notes: [{ id: "n_1", body: "Prefers text.", created_at: "2026-10-01T15:00:00.000Z" }] },
   "/api/maya/staff/crm-tasks": { ok: true, tasks: [{ id: "t_1", title: "Request void cheque", due_at: "2026-10-12", status: "open" }] },
   "/api/maya/staff/daily-briefing": { ok: true, waiting_on_documents: 4, stale_deals: 2, voicemails: 1 },
+  // KS_AGENT_CUSTOM_EVERYWHERE_v1 - KS-server KS_SERVER_CUSTOM_EVERYWHERE_v1
+  "/api/maya/staff/properties": { ok: true, properties: [{ key: "deal_cf_equipment_type", label: "Deal: Equipment type", type: "text", group: "Deal properties" }], pipelines: [{ id: "p1", name: "Renewals", stages: ["Due", "Quoted", "Renewed"] }], summary: "1 custom property and 1 extra pipeline(s)." },
+  "/api/maya/staff/find-by-property": { ok: true, object: "deal", matches: [{ id: APP_ID, label: "Northwind Trucking", value: "Excavator", stage: "In Review" }], summary: "1 match(es)." },
+  "/api/maya/staff/pipelines-overview": { ok: true, pipelines: [{ pipeline: "Renewals", stages: [{ name: "Due", outcome: "open", probability: 20, deals: 3, amount: 150000, weighted: 30000 }], open_deals: 3, weighted_amount: 30000 }], deals: [], summary: "1 pipeline(s)." },
   "/api/maya/staff/docs-request-draft": { ok: true, missing: ["void_cheque"], draft: "Hi Dana, could you upload a void cheque?" },
   "/api/maya/staff/draft-email": { ok: true, draft: { to: "dana@northwind.example", subject: "Next steps", body: "Hi Dana" } },
   "/api/maya/staff/lender-match-explain": { ok: true, matches: [{ product: "Term loan", match_pct: 82, reasons: ["amount in range"] }], missing_inputs: [], stale: false },

@@ -129,7 +129,7 @@ describe("[163] every staff tool gets the lending silo and the verified role", (
     "todo.status": { application_id: "a1" }, "comm.draft_email": { to: "a@b.co", subject: "s", body: "b" },
     "comm.send_sms": { contact_id: "c1", body: "hi" }, "call.initiate": { contact_id: "c1" }, "pipeline.query": { question: "oldest active application" },
     "marketing.send_campaign": { channel: "email", subject: "s", html: "<p>x</p>" }, "ads.negatives.add": { campaign: "111", terms: ["student loan"] },
-    "ads.negatives.remove": { id: "neg_1" },
+    "ads.negatives.remove": { id: "neg_1" }, "crm.find_by_property": { field: "deal_cf_equipment_type", value: "Excavator" },
   };
   const staffTools = TOOLS_BY_AUDIENCE.staff.filter((t) => t !== "pending.confirm" && t !== "ui.navigate");
 

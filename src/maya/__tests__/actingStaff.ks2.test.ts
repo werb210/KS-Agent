@@ -39,7 +39,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   "todo.status": { application_id: "a1" }, "comm.draft_email": { to: "a@b.co", subject: "s", body: "b" },
   "comm.send_sms": { contact_id: "c1", body: "hi" }, "call.initiate": { contact_id: "c1" }, "pipeline.query": { question: "oldest active application" },
   "marketing.send_campaign": { channel: "email", subject: "s", html: "<p>x</p>" }, "ads.negatives.add": { campaign: "111", terms: ["student loan"] },
-  "ads.negatives.remove": { id: "neg_1" },
+  "ads.negatives.remove": { id: "neg_1" }, "crm.find_by_property": { field: "deal_cf_equipment_type", value: "Excavator" },
 };
 
 describe("staff tools carry the acting staff member", () => {
